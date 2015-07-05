@@ -40,7 +40,7 @@ new bool:g_hosties = false;
 new bool:g_c4;
 new Handle:cvar_c4;
 
-#define VERSION "2.01"
+#define VERSION "2.01 (Trade Lounge)"
 
 new Handle:tree[MAXPLAYERS+1];
 
@@ -66,7 +66,7 @@ public Plugin:myinfo =
 
 public OnPluginStart()
 {
-  LoadTranslations ("weaponpaints.phrases");
+  LoadTranslations ("weaponpaints-trade.phrases.txt");
 
   h_cookie_SkinWear1 = RegClientCookie("WS_Paints_part_1", "WS_Paints_part_1", CookieAccess_Private);
   h_cookie_SkinWear2 = RegClientCookie("WS_Paints_part_2", "WS_Paints_part_2", CookieAccess_Private);
@@ -313,21 +313,12 @@ public Action:Rtimer(Handle:timer)
 */
 public Action:Command_QuickSelect_WSkin(client, args) 
 {
-  //Get all required args
-  new isVIP = CheckCommandAccess(client, "", ADMFLAG_CUSTOM3);
 
+  //Get quickNumber
   new String:indexStr[6];
   GetCmdArgString(indexStr, sizeof(indexStr));
   new quickNumber = StringToInt(indexStr);
-  
-  //Only VIPS can use this plugin unless you are setting the default skin
-  if (!(isVIP)) {
-    if (args != 1 || quickNumber != 0) {
-      CPrintToChat(client, " {green}[WS]{default} %t", "Must be VIP");
-      return Plugin_Handled;
-    }
-  }
-  
+
   //Show menu if no args, otherwise perform quick select
   new Float:inputWear = INVALID_WEAR;
   
