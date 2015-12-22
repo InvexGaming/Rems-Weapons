@@ -164,18 +164,22 @@
 		"tr"		"Silahınıza boya eklendi{purple} {1}"
 		"ru"		"Раскраска этого оружия{purple} {1}"
         }
-        "Index out of Range"
-        {
-    "#format"	"{1:d}"
-		"en"		"You have selected an out of range Index. Index is {purple}0 - {1}"
-        }
-        "Must be VIP"
-        {
-    "en"			"You must be a VIP user to use this command. Type {green}!vip{default} to learn more."
-        }
-        "Wear Value Wrong"
-        {
-            "en"			"Wear value must be between {green}0.0{default} and {green}1.0{default}."
-        }
+    "Index out of Range"
+    {
+      "#format"	"{1:d}"
+      "en"		"You have selected an out of range Index. Index is {purple}0 - {1}"
+    }
+    "Must be VIP"
+    {
+      "en"			"You must be a VIP user to use this command. Type {green}!vip{default} to learn more."
+    }
+    "Wear Value Wrong"
+    {
+      "en"			"Wear value must be between {green}0.0{default} and {green}1.0{default}."
+    }
+    "Too Many Args"
+    {
+      "en" "Too many arguments provided. Usage: !ws <skin_number> <wear> <pattern_seed>"
+    }
         
 }

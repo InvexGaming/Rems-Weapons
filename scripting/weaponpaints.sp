@@ -8,10 +8,16 @@
 #undef REQUIRE_PLUGIN
 #include <lastrequest>
 
+#define VERSION "2.04"
+
 #define MAX_PAINTS 800
 #define TYPE_MENU 0
 #define TYPE_QUICK 1
+
+#define DEFAULT_ID 0
 #define INVALID_WEAR -1.0
+#define DEFAULT_WEAR -1.0
+#define DEFAULT_SEED 0
 
 enum Listing
 {
@@ -22,27 +28,24 @@ enum Listing
   quality
 }
 
-new Handle:h_cookie_SkinWear1 = INVALID_HANDLE;
-new Handle:h_cookie_SkinWear2 = INVALID_HANDLE;
-new Handle:h_cookie_SkinWear3 = INVALID_HANDLE;
-new Handle:h_cookie_SkinWear4 = INVALID_HANDLE;
-new Handle:h_cookie_SkinWear5 = INVALID_HANDLE;
-new Handle:h_cookie_SkinWear6 = INVALID_HANDLE;
-new Handle:h_cookie_SkinWear7 = INVALID_HANDLE;
-
 new Handle:menuw = INVALID_HANDLE;
+
+new Handle:csgo_weapons;
 new g_paints[MAX_PAINTS][Listing];
 new g_paintCount = 0;
 new String:path_paints[PLATFORM_MAX_PATH];
 
-new bool:g_hosties = false;
 
+new bool:g_hosties = false;
 new bool:g_c4;
 new Handle:cvar_c4;
 
-#define VERSION "2.01"
 
-new Handle:tree[MAXPLAYERS+1];
+new Handle:db = INVALID_HANDLE;
+new String:g_sCmdLogPath[256];
+
+new Handle:tree[MAXPLAYERS+1] = INVALID_HANDLE;
+new bool:isChecked[MAXPLAYERS+1];
 
 new Handle:saytimer;
 new Handle:cvar_saytimer;
@@ -57,9 +60,9 @@ new g_rmenu;
 
 public Plugin:myinfo =
 {
-  name = "CS:GO Weapon Skins (!ws) Reloaded",
-  author = "Originally by Franc1sco franug, rewritten and updated by Invex | Byte",
-  description = "Allows you to apply skin textures to CSGO guns.",
+  name = "CS:GO VIP Plugin",
+  author = "Invex | Byte",
+  description = "Special actions for VIP players.",
   version = VERSION,
   url = "http://www.invexgaming.com.au"
 };
@@ -68,58 +71,188 @@ public OnPluginStart()
 {
   LoadTranslations ("weaponpaints.phrases");
 
-  h_cookie_SkinWear1 = RegClientCookie("WS_Paints_part_1", "WS_Paints_part_1", CookieAccess_Private);
-  h_cookie_SkinWear2 = RegClientCookie("WS_Paints_part_2", "WS_Paints_part_2", CookieAccess_Private);
-  h_cookie_SkinWear3 = RegClientCookie("WS_Paints_part_3", "WS_Paints_part_3", CookieAccess_Private);
-  h_cookie_SkinWear4 = RegClientCookie("WS_Paints_part_4", "WS_Paints_part_4", CookieAccess_Private);
-  h_cookie_SkinWear5 = RegClientCookie("WS_Paints_part_5", "WS_Paints_part_5", CookieAccess_Private);
-  h_cookie_SkinWear6 = RegClientCookie("WS_Paints_part_6", "WS_Paints_part_6", CookieAccess_Private);
-  h_cookie_SkinWear7 = RegClientCookie("WS_Paints_part_7", "WS_Paints_part_7", CookieAccess_Private);
-  
-  CreateConVar("sm_ws_version", VERSION, "", FCVAR_PLUGIN|FCVAR_SPONLY|FCVAR_REPLICATED|FCVAR_NOTIFY|FCVAR_CHEAT|FCVAR_DONTRECORD);
-  
-  HookEvent("round_start", roundStart);
-
-  //RegConsoleCmd("buyammo1", GetSkins); 
-
-  //Commands and command aliases
-  RegConsoleCmd("ws", Command_QuickSelect_WSkin);
-  RegConsoleCmd("wskin", Command_QuickSelect_WSkin);
-  RegConsoleCmd("wskins", Command_QuickSelect_WSkin);
-  RegConsoleCmd("pk", Command_QuickSelect_WSkin);
-  RegConsoleCmd("paints", Command_QuickSelect_WSkin);
-  
-  RegAdminCmd("sm_reloadws", ReloadSkins, ADMFLAG_ROOT);
-
-  for (new client = 1; client <= MaxClients; client++)
-  {
-    if (!IsClientInGame(client))
-      continue;
-      
-    OnClientPutInServer(client);
-    
-    if(!AreClientCookiesCached(client))
-      continue;
-      
-    OnClientCookiesCached(client);
+  //Create log file
+  for(new i = 0;; i++) {
+    BuildPath(Path_SM, g_sCmdLogPath, sizeof(g_sCmdLogPath), "logs/wpaints_%d.log", i);
+    if ( !FileExists(g_sCmdLogPath) )
+      break;
   }
   
-  cvar_c4 = CreateConVar("sm_ws_c4", "1", "Enable or disable that people can apply paints to the C4. 1 = enabled, 0 = disabled");
-  cvar_saytimer = CreateConVar("sm_ws_saytimer", "10", "Time in seconds for block that show the plugin commands in chat when someone type a command. -1.0 = never show the commands in chat");
-  cvar_rtimer = CreateConVar("sm_ws_roundtimer", "-1.0", "Time in seconds roundstart for can use the commands for change the paints. -1.0 = always can use the command");
-  cvar_rmenu = CreateConVar("sm_ws_rmenu", "1", "Re-open the menu when you select a option. 1 = enabled, 0 = disabled.");
+  CreateConVar("sm_vipspecial_version", VERSION, "", FCVAR_PLUGIN|FCVAR_SPONLY|FCVAR_REPLICATED|FCVAR_NOTIFY|FCVAR_CHEAT|FCVAR_DONTRECORD);
+
+  //Commands
+  RegAdminCmd("sm_reload_vipspecial", ReloadSkins, ADMFLAG_ROOT);
+
+  //Convars
+  cvar_c4 = CreateConVar("sm_vipspecial_c4", "1", "No description provided (see source). 1 = enabled, 0 = disabled");
+  cvar_saytimer = CreateConVar("sm_vipspecial_saytimer", "10", "No description provided (see source). -1.0 = never show the commands in chat");
+  cvar_rtimer = CreateConVar("sm_vipspecial_roundtimer", "-1.0", "No description provided (see source). -1.0 = always can use the command");
+  cvar_rmenu = CreateConVar("sm_vipspecial_rmenu", "1", "No description provided (see source). 1 = enabled, 0 = disabled.");
   
   g_c4 = GetConVarBool(cvar_c4);
   g_saytimer = GetConVarInt(cvar_saytimer);
   g_rtimer = GetConVarInt(cvar_rtimer);
   g_rmenu = GetConVarBool(cvar_rmenu);
   
+  //Hooks
+  HookEvent("round_start", roundStart);
   HookConVarChange(cvar_c4, OnConVarChanged);
   HookConVarChange(cvar_saytimer, OnConVarChanged);
   HookConVarChange(cvar_rtimer, OnConVarChanged);
   HookConVarChange(cvar_rmenu, OnConVarChanged);
   
+  //Read paints from config file
   ReadPaints();
+  
+  //Populate csgo_weapons array
+  if(csgo_weapons != INVALID_HANDLE)
+    CloseHandle(csgo_weapons);
+  
+  csgo_weapons = CreateArray(128);
+  
+  new String:weapon[64];
+  
+  Format(weapon, 64, "weapon_negev");
+  PushArrayString(csgo_weapons, weapon);
+  
+  Format(weapon, 64, "weapon_m249");
+  PushArrayString(csgo_weapons, weapon);
+  
+  Format(weapon, 64, "weapon_bizon");
+  PushArrayString(csgo_weapons, weapon);
+  
+  Format(weapon, 64, "weapon_p90");
+  PushArrayString(csgo_weapons, weapon);
+  
+  Format(weapon, 64, "weapon_scar20");
+  PushArrayString(csgo_weapons, weapon);
+  
+  Format(weapon, 64, "weapon_g3sg1");
+  PushArrayString(csgo_weapons, weapon);
+  
+  Format(weapon, 64, "weapon_m4a1");
+  PushArrayString(csgo_weapons, weapon);
+  
+  Format(weapon, 64, "weapon_m4a1_silencer");
+  PushArrayString(csgo_weapons, weapon);
+  
+  Format(weapon, 64, "weapon_ak47");
+  PushArrayString(csgo_weapons, weapon);
+  
+  Format(weapon, 64, "weapon_aug");
+  PushArrayString(csgo_weapons, weapon);
+  
+  Format(weapon, 64, "weapon_galilar");
+  PushArrayString(csgo_weapons, weapon);
+  
+  Format(weapon, 64, "weapon_awp");
+  PushArrayString(csgo_weapons, weapon);
+  
+  Format(weapon, 64, "weapon_sg556");
+  PushArrayString(csgo_weapons, weapon);
+  
+  Format(weapon, 64, "weapon_ump45");
+  PushArrayString(csgo_weapons, weapon);
+  
+  Format(weapon, 64, "weapon_mp7");
+  PushArrayString(csgo_weapons, weapon);
+
+  Format(weapon, 64, "weapon_famas");
+  PushArrayString(csgo_weapons, weapon);
+  
+  Format(weapon, 64, "weapon_mp9");
+  PushArrayString(csgo_weapons, weapon);
+
+  Format(weapon, 64, "weapon_mac10");
+  PushArrayString(csgo_weapons, weapon);
+  
+  Format(weapon, 64, "weapon_ssg08");
+  PushArrayString(csgo_weapons, weapon);
+  
+  Format(weapon, 64, "weapon_nova");
+  PushArrayString(csgo_weapons, weapon);
+  
+  Format(weapon, 64, "weapon_xm1014");
+  PushArrayString(csgo_weapons, weapon);
+  
+  Format(weapon, 64, "weapon_sawedoff");
+  PushArrayString(csgo_weapons, weapon);
+  
+  Format(weapon, 64, "weapon_mag7");
+  PushArrayString(csgo_weapons, weapon);
+  
+  // Secondary weapons
+  Format(weapon, 64, "weapon_elite");
+  PushArrayString(csgo_weapons, weapon);
+
+  Format(weapon, 64, "weapon_deagle");
+  PushArrayString(csgo_weapons, weapon);
+
+  Format(weapon, 64, "weapon_revolver");
+  PushArrayString(csgo_weapons, weapon);
+  
+  Format(weapon, 64, "weapon_tec9"); 
+  PushArrayString(csgo_weapons, weapon);
+  
+  Format(weapon, 64, "weapon_fiveseven");
+  PushArrayString(csgo_weapons, weapon);
+
+  Format(weapon, 64, "weapon_cz75a");
+  PushArrayString(csgo_weapons, weapon);
+  
+  Format(weapon, 64, "weapon_glock");
+  PushArrayString(csgo_weapons, weapon);
+  
+  Format(weapon, 64, "weapon_usp_silencer");
+  PushArrayString(csgo_weapons, weapon);
+  
+  Format(weapon, 64, "weapon_p250");
+  PushArrayString(csgo_weapons, weapon);
+  
+  Format(weapon, 64, "weapon_hkp2000");
+  PushArrayString(csgo_weapons, weapon);
+  
+  Format(weapon, 64, "weapon_bayonet");
+  PushArrayString(csgo_weapons, weapon);
+  
+  Format(weapon, 64, "weapon_knife_gut");
+  PushArrayString(csgo_weapons, weapon);
+  
+  Format(weapon, 64, "weapon_knife_flip");
+  PushArrayString(csgo_weapons, weapon);
+  
+  Format(weapon, 64, "weapon_knife_m9_bayonet");
+  PushArrayString(csgo_weapons, weapon);
+  
+  Format(weapon, 64, "weapon_knife_karambit");
+  PushArrayString(csgo_weapons, weapon);
+  
+  Format(weapon, 64, "weapon_knife_tactical");
+  PushArrayString(csgo_weapons, weapon);
+  
+  Format(weapon, 64, "weapon_knife_butterfly");
+  PushArrayString(csgo_weapons, weapon);
+  
+  Format(weapon, 64, "weapon_c4");
+  PushArrayString(csgo_weapons, weapon);
+  
+  Format(weapon, 64, "weapon_knife_falchion");
+  PushArrayString(csgo_weapons, weapon);
+  
+  Format(weapon, 64, "weapon_knife_push");
+  PushArrayString(csgo_weapons, weapon);
+
+  //Process players and set them up
+  for (new client = 1; client <= MaxClients; client++)
+  {
+    if (!IsClientInGame(client))
+      continue;
+      
+    OnClientPutInServer(client);
+  }
+  
+  //Check the database
+  CheckDB(true);
 }
 
 public OnConVarChanged(Handle:convar, const String:oldValue[], const String:newValue[])
@@ -153,40 +286,326 @@ public OnPluginEnd()
   }
 }
 
-public OnClientCookiesCached(client)
+public Action:OnClientSayCommand(client, const String:command[], const String:sArgs[])
 {
-  //Make all the cookies strings we need
-  decl String:cookie1[100], String:cookie2[100],String:cookie3[100], String:cookie4[100],
-       String:cookie5[100], String:cookie6[100],String:cookie7[100];
-  
-  //Now lets get the cookies!
-  GetClientCookie(client, h_cookie_SkinWear1, cookie1, sizeof(cookie1));
-  GetClientCookie(client, h_cookie_SkinWear2, cookie2, sizeof(cookie2));
-  GetClientCookie(client, h_cookie_SkinWear3, cookie3, sizeof(cookie3));
-  GetClientCookie(client, h_cookie_SkinWear4, cookie4, sizeof(cookie4));
-  GetClientCookie(client, h_cookie_SkinWear5, cookie5, sizeof(cookie5));
-  GetClientCookie(client, h_cookie_SkinWear6, cookie6, sizeof(cookie6));
-  GetClientCookie(client, h_cookie_SkinWear7, cookie7, sizeof(cookie7));
-  
-  //If we got no cookies, lets set up some initial cookies
-  //Our cookies are in form X|Y where X is a 4 chars and represents a number, Y is upto 9 chars and represents a float
-  if(strlen(cookie1) < 14) Format(cookie1, sizeof(cookie1), "0|-1.0;0|-1.0;0|-1.0;0|-1.0;0|-1.0;0|-1.0;");
-  if(strlen(cookie2) < 14) Format(cookie2, sizeof(cookie2), "0|-1.0;0|-1.0;0|-1.0;0|-1.0;0|-1.0;0|-1.0;");
-  if(strlen(cookie3) < 14) Format(cookie3, sizeof(cookie3), "0|-1.0;0|-1.0;0|-1.0;0|-1.0;0|-1.0;0|-1.0;");
-  if(strlen(cookie4) < 14) Format(cookie4, sizeof(cookie4), "0|-1.0;0|-1.0;0|-1.0;0|-1.0;0|-1.0;0|-1.0;");
-  if(strlen(cookie5) < 14) Format(cookie5, sizeof(cookie5), "0|-1.0;0|-1.0;0|-1.0;0|-1.0;0|-1.0;0|-1.0;");
-  if(strlen(cookie6) < 14) Format(cookie6, sizeof(cookie6), "0|-1.0;0|-1.0;0|-1.0;0|-1.0;0|-1.0;0|-1.0;");
-  if(strlen(cookie7) < 14) Format(cookie7, sizeof(cookie7), "0|-1.0;0|-1.0;0|-1.0;0|-1.0;0|-1.0;"); //1 less value
-  
-  CreateTree(client, cookie1, cookie2, cookie3, cookie4, cookie5, cookie6, cookie7);
+  //Check if command starts with following strings
+  if( strncmp(sArgs, "!ws", 3, false) == 0 || 
+      strncmp(sArgs, "!wskin", 6, false) == 0 || 
+      strncmp(sArgs, "!wskins", 7, false) == 0 || 
+      strncmp(sArgs, "!pk", 3, false) == 0 || 
+      strncmp(sArgs, "!paints", 7, false) == 0 || 
+      strncmp(sArgs, "!pkits", 6, false) == 0 || 
+      strncmp(sArgs, "!rvip", 5, false) == 0
+    )
+  {
+    //Get arguments
+    decl String:idWearSeed[5][14];
+    new returnNum = ExplodeString(sArgs, " ", idWearSeed, sizeof(idWearSeed), sizeof(idWearSeed[]), true);
+    
+    //Parameters
+    new inputIndex = DEFAULT_ID;
+    new Float:inputWear = DEFAULT_WEAR;
+    new inputSeed = DEFAULT_SEED;
+    
+    //Set parameter values
+    if (returnNum == 0)
+      return Plugin_Handled; //error
+    else if (returnNum == 1) {
+      //do nothing here
+    }
+    else if (returnNum == 2) {
+      inputIndex = StringToInt(idWearSeed[1]);
+    }
+    else if (returnNum == 3) {
+      inputIndex = StringToInt(idWearSeed[1]);
+      inputWear = StringToFloat(idWearSeed[2]);
+    }
+    else if (returnNum == 4) {
+      inputIndex = StringToInt(idWearSeed[1]);
+      inputWear = StringToFloat(idWearSeed[2]);
+      inputSeed = StringToInt(idWearSeed[3]);
+    }
+    else {
+      //5 strings retrieved, too many arguments were provided
+      CPrintToChat(client, " {green}[WS]{default} %t", "Too Many Args");
+      return Plugin_Handled;
+    }
+    
+    //Get VIP status
+    new isVIP = CheckCommandAccess(client, "", ADMFLAG_CUSTOM3);
+    
+    //Only VIPS can use this plugin unless you are setting the default skin
+    if (!isVIP) {
+      if (!(returnNum == 2 && inputIndex == 0)) {
+        CPrintToChat(client, " {green}[WS]{default} %t", "Must be VIP");
+        return Plugin_Handled;
+      }
+    }
+    
+    // Check input wears
+    if (returnNum >= 3 && inputWear < 0.0 || inputWear > 1.0) { //check for valid wear
+      CPrintToChat(client, " {green}[WS]{default} %t", "Wear Value Wrong");
+      return Plugin_Handled;
+    }
+    
+    //Show menu
+    if (returnNum == 1) {
+      ShowMenu(client, 0);
+
+      if (saytimer != INVALID_HANDLE || g_saytimer == -1)
+        return Plugin_Handled;
+
+      saytimer = CreateTimer(1.0 * g_saytimer, Tsaytimer);
+
+      return Plugin_Handled;
+    }
+    else {
+      //Call WSkin_Selecter
+      WSkin_Selecter(TYPE_QUICK, INVALID_HANDLE, client, 0, inputIndex, inputWear, inputSeed);
+    }
+    
+    return Plugin_Continue;
+  }
+  else if(StrEqual(sArgs, "!ss", false) || StrEqual(sArgs, "!showskin", false))
+  {
+    ShowSkin(client);
+    
+    if (saytimer != INVALID_HANDLE || g_saytimer == -1)
+      return Plugin_Handled;
+    
+    saytimer = CreateTimer(1.0 * g_saytimer, Tsaytimer);
+    
+    return Plugin_Continue;
+  }
+
+  return Plugin_Continue;
 }
 
-public OnClientDisconnect(client)
-{  
-  if(AreClientCookiesCached(client))
+
+CheckDB(bool:reconnect = false, String:yourdb[64] = "wpaints")
+{
+  if(reconnect)
   {
-    SaveCookies(client);
+    if (db != INVALID_HANDLE)
+    {
+      CloseHandle(db);
+      db = INVALID_HANDLE;
+    }
   }
+  else if (db != INVALID_HANDLE)
+  {
+    return;
+  }
+
+  //Check if databases.cfg entry exist
+  if (!SQL_CheckConfig( yourdb ))
+  {
+    LogMessage("wpaints database does not exist.");
+    return;
+  }
+  
+  SQL_TConnect(OnSqlConnect, yourdb);
+}
+
+public OnSqlConnect(Handle:owner, Handle:hndl, const String:error[], any:data)
+{
+  if (hndl == INVALID_HANDLE)
+  {
+    LogToFileEx(g_sCmdLogPath, "Database failure: %s", error);
+    SetFailState("Database connection failed.");
+  }
+  else
+  {
+    db = hndl;
+    decl String:buffer[3096];
+    
+    SQL_GetDriverIdent(SQL_ReadDriver(db), buffer, sizeof(buffer));
+
+    //Non sqlite databases not supported
+    if (!StrEqual(buffer, "sqlite", false))
+      return;
+  
+    //Create temp array with weapon names
+    new String:temp[64][41];
+    
+    for (new i = 0; i < GetArraySize(csgo_weapons); ++i) {
+      GetArrayString(csgo_weapons, i, temp[i], 64);
+    }
+  
+    //Create SQL Database if it doesn't exist
+    Format(buffer, sizeof(buffer), "CREATE TABLE IF NOT EXISTS wpaints ( steamid varchar(32) NOT NULL, %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', PRIMARY KEY (steamid))", temp[0],temp[1],temp[2],temp[3],temp[4],temp[5],temp[6],temp[7],temp[8],temp[9],temp[10],temp[11],temp[12],temp[13],temp[14],temp[15],temp[16],temp[17],temp[18],temp[19],temp[20],temp[21],temp[22],temp[23],temp[24],temp[25],temp[26],temp[27],temp[28],temp[29],temp[30],temp[31],temp[32],temp[33],temp[34],temp[35],temp[36],temp[37],temp[38],temp[39],temp[40],temp[41],temp[42]);
+  
+    LogToFileEx(g_sCmdLogPath, "Query %s", buffer);
+    SQL_TQuery(db, initDBConn_callback, buffer);
+  }
+}
+
+public initDBConn_callback(Handle:owner, Handle:hndl, const String:error[], any:data)
+{
+  if (hndl == INVALID_HANDLE) {
+    LogToFileEx(g_sCmdLogPath, "Query failure: %s", error);
+    return;
+  }
+  
+  //Log success
+  LogToFileEx(g_sCmdLogPath, "Database connection successful.");
+  
+  for (new client = 1; client <= MaxClients; ++client) {
+    if (IsClientInGame(client)) {
+      OnClientPostAdminCheck(client);
+    }
+  }
+}
+
+//Check steamID once client is authorized 
+public OnClientPostAdminCheck(client)
+{
+  if (!IsFakeClient(client))
+    CheckSteamID(client);
+}
+
+
+CheckSteamID(client)
+{
+  decl String:query[255], String:steamid[32];
+  GetClientAuthId(client, AuthId_Steam2,  steamid, sizeof(steamid) );
+  
+  Format(query, sizeof(query), "SELECT * FROM wpaints WHERE steamid = '%s'", steamid);
+  LogToFileEx(g_sCmdLogPath, "Query %s", query);
+  SQL_TQuery(db, CheckSteamID_callback, query, GetClientUserId(client));
+}
+ 
+public CheckSteamID_callback(Handle:owner, Handle:hndl, const String:error[], any:data)
+{
+  new client = GetClientOfUserId(data);
+ 
+  // Make sure the client didn't disconnect while the thread was running
+  if (client == 0)
+    return;
+  
+  //Check to see if database connection is up
+  if (hndl == INVALID_HANDLE) {
+    CheckDB();
+    return;
+  }
+  
+  //If no results, this is a new user, add them to database
+  if (!SQL_GetRowCount(hndl) || !SQL_FetchRow(hndl)) {
+    AddNewClientDB(client);
+    return;
+  }
+  
+  //Get entries for this client
+  tree[client] = CreateTrie();
+
+  new String:Classname[64];
+  new String:temp[64];
+  new counter = 1;
+  
+  for (new i = 0; i < GetArraySize(csgo_weapons); ++i)
+  {
+    GetArrayString(csgo_weapons, i, Classname, 64);
+    SQL_FetchString(hndl, counter, temp, 64);
+    
+    //temp is in format:  id;wear;seed  , break it apart
+    //After this idWearSeed[0] contains id, idWearSeed[1] contains wear level, idWearSeed[2] contains seed
+    decl String:idWearSeed[3][14];
+    ExplodeString(temp, ";", idWearSeed, sizeof(idWearSeed), sizeof(idWearSeed[]));
+    
+    //Set ID value in tree
+    SetTrieValue(tree[client], Classname, StringToInt(idWearSeed[0]));
+    
+    //Set wear value in tree
+    decl String:Classname_wearname[64];
+    Format(Classname_wearname, sizeof(Classname_wearname), "%s%s", Classname, "_wear");
+    
+    SetTrieValue(tree[client], Classname_wearname, StringToFloat(idWearSeed[1]));
+    
+    //Set seed value in tree
+    decl String:Classname_seed[64];
+    Format(Classname_seed, sizeof(Classname_seed), "%s%s", Classname, "_seed");
+    
+    SetTrieValue(tree[client], Classname_seed, StringToInt(idWearSeed[2]));
+    
+    ++counter;
+  }
+  
+  isChecked[client] = true;
+}
+
+//Adds a new client to the database
+AddNewClientDB(client)
+{
+  //Get SteamID
+  decl String:query[255], String:steamid[32];
+  GetClientAuthId(client, AuthId_Steam2,  steamid, sizeof(steamid) );
+  new userid = GetClientUserId(client);
+  
+  Format(query, sizeof(query), "INSERT INTO wpaints(steamid) VALUES('%s');", steamid);
+  LogToFileEx(g_sCmdLogPath, "Query %s", query);
+  SQL_TQuery(db, AddNewClientDB_callback, query, userid);
+}
+
+public AddNewClientDB_callback(Handle:owner, Handle:hndl, const String:error[], any:data)
+{
+  if (hndl == INVALID_HANDLE) {
+    LogToFileEx(g_sCmdLogPath, "Query failure: %s", error);
+    CheckDB();
+  }
+  
+  new client = GetClientOfUserId(data);
+ 
+  // Make sure the client didn't disconnect while the thread was running 
+  if (client == 0)
+    return;
+  
+  tree[client] = CreateTrie();
+
+  new String:Classname[64];
+  
+  for (new i = 0; i < GetArraySize(csgo_weapons); ++i) {
+    //Set ID value in tree
+    GetArrayString(csgo_weapons, i, Classname, 64);
+    SetTrieValue(tree[client], Classname, DEFAULT_ID);
+    
+    //Set wear value in tree
+    decl String:Classname_wearname[64];
+    Format(Classname_wearname, sizeof(Classname_wearname), "%s%s", Classname, "_wear");
+    
+    SetTrieValue(tree[client], Classname_wearname, DEFAULT_WEAR);
+    
+    //Set seed value in tree
+    decl String:Classname_seed[64];
+    Format(Classname_seed, sizeof(Classname_seed), "%s%s", Classname, "_seed");
+    
+    SetTrieValue(tree[client], Classname_seed, DEFAULT_SEED);
+  }
+  
+  //Set client as checked
+  isChecked[client] = true;
+}
+
+public DBGeneral_callback(Handle:owner, Handle:hndl, const String:error[], any:data)
+{
+  if (hndl == INVALID_HANDLE) {
+    LogToFileEx(g_sCmdLogPath, "Query failure: %s", error);
+  }
+  
+  new client = GetClientOfUserId(data);
+ 
+  // Make sure the client didn't disconnect while the thread was running
+  if (client == 0)
+    return;
+
+  isChecked[client] = true;
+}
+
+
+//Clean up when client disconnects
+public OnClientDisconnect(client)
+{ 
+  isChecked[client] = false;
+
   if(tree[client] != INVALID_HANDLE)
   {
     ClearTrie(tree[client]);
@@ -198,7 +617,6 @@ public OnClientDisconnect(client)
 public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
 {
   MarkNativeAsOptional("IsClientInLastRequest");
-
   return APLRes_Success;
 }
 
@@ -228,7 +646,7 @@ public Action:ReloadSkins(client, args)
 
 ShowMenu(client, item)
 {
-  SetMenuTitle(menuw, "%T","Menu title", client);
+  SetMenuTitle(menuw, "%T", "Menu title", client);
   
   RemoveMenuItem(menuw, 1);
   RemoveMenuItem(menuw, 0);
@@ -241,26 +659,6 @@ ShowMenu(client, item)
   DisplayMenuAtItem(menuw, client, item, 0);
 }
 
-public Action:GetSkins(client, args)
-{  
-  ShowMenu(client, 0);
-  
-  return Plugin_Handled;
-}
-
-public Action:OnClientSayCommand(client, const String:command[], const String:sArgs[])
-{
-  if(StrEqual(sArgs, "!ss", false) || StrEqual(sArgs, "!showskin", false))
-  {
-    ShowSkin(client);
-    
-    if(saytimer != INVALID_HANDLE || g_saytimer == -1) return Plugin_Handled;
-    saytimer = CreateTimer(1.0*g_saytimer, Tsaytimer);
-    return Plugin_Continue;
-  }
-
-  return Plugin_Continue;
-}
 
 ShowSkin(client)
 {
@@ -307,69 +705,22 @@ public Action:Rtimer(Handle:timer)
   rtimer = INVALID_HANDLE;
 }
 
-/*
- * This command will delegate to other commands based on arguments provided.
- * So it will call function to show menu if no commands etc. 
-*/
-public Action:Command_QuickSelect_WSkin(client, args) 
-{
-  //Get all required args
-  new isVIP = CheckCommandAccess(client, "", ADMFLAG_CUSTOM3);
-
-  new String:indexStr[6];
-  GetCmdArgString(indexStr, sizeof(indexStr));
-  new quickNumber = StringToInt(indexStr);
-  
-  //Only VIPS can use this plugin unless you are setting the default skin
-  if (!(isVIP)) {
-    if (args != 1 || quickNumber != 0) {
-      CPrintToChat(client, " {green}[WS]{default} %t", "Must be VIP");
-      return Plugin_Handled;
-    }
-  }
-  
-  //Show menu if no args, otherwise perform quick select
-  new Float:inputWear = INVALID_WEAR;
-  
-  //Show menu
-  if (args == 0) {
-    ShowMenu(client, 0);
-
-    if(saytimer != INVALID_HANDLE || g_saytimer == -1) return Plugin_Handled;
-    saytimer = CreateTimer(1.0*g_saytimer, Tsaytimer);
-    return Plugin_Handled;
-  }
-  else if (args == 2) { //Wear provided
-    new String:buffer[6];
-    GetCmdArg(2, buffer, sizeof(buffer));
-    inputWear = StringToFloat(buffer);
-    
-    if (inputWear < 0.0 || inputWear > 1.0) { //check for valid wear
-      CPrintToChat(client, " {green}[WS]{default} %t", "Wear Value Wrong");
-      return Plugin_Handled;
-    }
-  }
-  else if (args > 2){
-    return Plugin_Handled;
-  }
-
-  WSkin_Selecter(TYPE_QUICK, INVALID_HANDLE, client, 0, quickNumber, inputWear);
-  
-  return Plugin_Handled;
-}
-
 
 public DIDMenuHandler(Handle:menu, MenuAction:action, client, itemNum) 
 {
   if ( action == MenuAction_Select ) 
   {
-    WSkin_Selecter(TYPE_MENU, menu, client, itemNum, 0, INVALID_WEAR);
+    WSkin_Selecter(TYPE_MENU, menu, client, itemNum, 0, INVALID_WEAR, DEFAULT_SEED);
   }
 }
 
 
-WSkin_Selecter(type, Handle:menu, client, itemNum, quickNumber, Float:inputWear) 
+WSkin_Selecter(type, Handle:menu, client, itemNum, quickNumber, Float:inputWear, inputSeed) 
 {
+  //Ensure client has been checked
+  if (!isChecked[client])
+    return;
+  
   if(rtimer == INVALID_HANDLE && g_rtimer != -1)
   {
     CPrintToChat(client, " {green}[WS]{default} %T", "You can use this command only the first seconds", client, g_rtimer);
@@ -408,7 +759,6 @@ WSkin_Selecter(type, Handle:menu, client, itemNum, quickNumber, Float:inputWear)
     }
   }
 
-  
   new windex = GetEntPropEnt(client, Prop_Send, "m_hActiveWeapon");
   if(windex < 1)
   {
@@ -433,6 +783,7 @@ WSkin_Selecter(type, Handle:menu, client, itemNum, quickNumber, Float:inputWear)
     if(type == TYPE_MENU && g_rmenu) ShowMenu(client, GetMenuSelectionPosition());
     return;
   }
+  
   if(GetPlayerWeaponSlot(client, CS_SLOT_PRIMARY) == windex || GetPlayerWeaponSlot(client, CS_SLOT_SECONDARY) == windex || GetPlayerWeaponSlot(client, CS_SLOT_KNIFE) == windex || (g_c4 && GetPlayerWeaponSlot(client, CS_SLOT_C4) == windex))
   {
     switch (weaponindex)
@@ -448,21 +799,35 @@ WSkin_Selecter(type, Handle:menu, client, itemNum, quickNumber, Float:inputWear)
       case 509: strcopy(Classname, 64, "weapon_knife_tactical");
       case 512: strcopy(Classname, 64, "weapon_knife_falchion");
       case 515: strcopy(Classname, 64, "weapon_knife_butterfly");
+      case 516: strcopy(Classname, 64, "weapon_knife_push");
     }
     
-    SetTrieValue(tree[client], Classname, theindex); //save index in trie for client
+    //Save index in trie for client
+    SetTrieValue(tree[client], Classname, theindex);
     
-    decl String:Classname_wearname[64]; //save wear in trie for client
+    //Save wear
+    decl String:Classname_wearname[64];
     Format(Classname_wearname, sizeof(Classname_wearname), "%s%s", Classname, "_wear");
     SetTrieValue(tree[client], Classname_wearname, inputWear);
     
-    ChangePaint(client, windex, Classname, weaponindex, inputWear);
+    //Save seed
+    decl String:Classname_seed[64];
+    Format(Classname_seed, sizeof(Classname_seed), "%s%s", Classname, "_seed");
+    SetTrieValue(tree[client], Classname_seed, inputSeed);
+    
+    //Call paint change plugin with these parameters
+    ChangePaint(client, windex, Classname, weaponindex, inputWear, inputSeed);
     FakeClientCommand(client, "use %s", Classname);
-    if(theindex == 0) CPrintToChat(client, " {green}[WS]{default} %t","You have choose your default paint for your", Classname);
-    else if(theindex == -1) CPrintToChat(client, " {green}[WS]{default} %t","You have choose a random paint for your", Classname);
-    else CPrintToChat(client, " {green}[WS]{default} %t", "You have choose a weapon", g_paints[theindex][listName], Classname);
+    
+    if (theindex == 0)
+      CPrintToChat(client, " {green}[WS]{default} %t","You have choose your default paint for your", Classname);
+    else if (theindex == -1)
+      CPrintToChat(client, " {green}[WS]{default} %t","You have choose a random paint for your", Classname);
+    else
+      CPrintToChat(client, " {green}[WS]{default} %t", "You have choose a weapon", g_paints[theindex][listName], Classname);
   }
-  else CPrintToChat(client, " {green}[WS]{default} %t", "You cant use a paint in this weapon");
+  else 
+    CPrintToChat(client, " {green}[WS]{default} %t", "You cant use a paint in this weapon");
   
   if(type == TYPE_MENU && g_rmenu) ShowMenu(client, GetMenuSelectionPosition());
 }
@@ -501,7 +866,6 @@ ReadPaints()
     CloseHandle(kv);
   }
   do {
-
     KvGetSectionName(kv, g_paints[g_paintCount][listName], 64);
     g_paints[g_paintCount][index] = KvGetNum(kv, "paint", 0);
     g_paints[g_paintCount][wear] = KvGetFloat(kv, "wear", -1.0);
@@ -517,17 +881,15 @@ ReadPaints()
   
   menuw = CreateMenu(DIDMenuHandler);
   
-  // TROLLING
-  SetMenuTitle(menuw, "( ͡° ͜ʖ ͡°)");
   decl String:item[4];
   AddMenuItem(menuw, "-1", "Random paint");
-  AddMenuItem(menuw, "0", "Default paint"); 
-  // FORGET THIS
+  AddMenuItem(menuw, "0", "Default paint");
   
-  for (new i=1; i<g_paintCount; ++i) {
+  for (new i=1; i < g_paintCount; ++i) {
     Format(item, 4, "%i", i);
     AddMenuItem(menuw, item, g_paints[i][listName]);
   }
+  
   SetMenuExitButton(menuw, true);
 }
 
@@ -548,7 +910,7 @@ stock SetReserveAmmo(client, weapon, weaponEntity, ammo, primaryReserve)
   SetEntProp(client, Prop_Send, "m_iAmmo", ammo, _, ammotype);
 } 
 
-ChangePaint(client, windex, String:Classname[64], weaponindex, Float:inputWear)
+ChangePaint(client, windex, String:Classname[64], weaponindex, Float:inputWear, inputSeed)
 {
   new bool:knife = false;
   if(StrContains(Classname, "weapon_knife", false) == 0 || StrContains(Classname, "weapon_bayonet", false) == 0) 
@@ -593,30 +955,52 @@ ChangePaint(client, windex, String:Classname[64], weaponindex, Float:inputWear)
   SetEntProp(entity,Prop_Send,"m_iItemIDLow",2048);
   SetEntProp(entity,Prop_Send,"m_iItemIDHigh",0);
 
+  //Skin
   SetEntProp(entity,Prop_Send,"m_nFallbackPaintKit",g_paints[theindex][index]); //set paint texture
   
-  if (inputWear != INVALID_WEAR)
-    SetEntPropFloat(entity,Prop_Send,"m_flFallbackWear", inputWear);
-  else if (g_paints[theindex][wear] >= 0.0)
-    SetEntPropFloat(entity,Prop_Send,"m_flFallbackWear",g_paints[theindex][wear]);
+  //Get suitable value for inputWear
+  if (inputWear == INVALID_WEAR) {
+    if (g_paints[theindex][wear] >= 0.0)
+      inputWear = g_paints[theindex][wear];
+    else
+      inputWear = 0.0; //default
+  }
   
+  //Set wear
+  SetEntPropFloat(entity,Prop_Send, "m_flFallbackWear", inputWear);
+  
+  //Seed
+  SetEntProp(entity, Prop_Send, "m_nFallbackSeed", inputSeed);
+  
+  //Stattrak
   if(g_paints[theindex][stattrak] != -2) SetEntProp(entity,Prop_Send,"m_nFallbackStatTrak",g_paints[theindex][stattrak]);
+  
+  //Quality
   if(g_paints[theindex][quality] != -2) SetEntProp(entity,Prop_Send,"m_iEntityQuality",g_paints[theindex][quality]);
   
-  //If knife, add star
+  //If knife, auto add star
   if (knife)
     SetEntProp(entity, Prop_Send, "m_iEntityQuality", 3); //3 is for the star
   
-
+  //Write changes to datebase (via UPDATE query)
+  decl String:steamid[32];
+  GetClientAuthId(client, AuthId_Steam2,  steamid, sizeof(steamid) );
+  
+  decl String:buffer[1024];
+  Format(buffer, sizeof(buffer), "UPDATE wpaints SET %s = '%d;%f;%d' WHERE steamid = '%s';", Classname, theindex, inputWear, inputSeed, steamid); 
+  LogToFileEx(g_sCmdLogPath, "Query %s", buffer);
+  SQL_TQuery(db, DBGeneral_callback, buffer, GetClientUserId(client));
+  
   CreateDataTimer(0.2, RestoreItemID, pack);
-  WritePackCell(pack,EntIndexToEntRef(entity));
-  WritePackCell(pack,m_iItemIDHigh);
-  WritePackCell(pack,m_iItemIDLow);
+  WritePackCell(pack, EntIndexToEntRef(entity));
+  WritePackCell(pack, m_iItemIDHigh);
+  WritePackCell(pack, m_iItemIDLow);
 }
 
 public OnClientPutInServer(client)
 {
-  if(!IsFakeClient(client)) SDKHook(client, SDKHook_WeaponEquipPost, OnPostWeaponEquip);
+  if(!IsFakeClient(client))
+    SDKHook(client, SDKHook_WeaponEquipPost, OnPostWeaponEquip);
 }
 
 public Action:OnPostWeaponEquip(client, weapon)
@@ -674,6 +1058,7 @@ public Action:Last(Handle:timer, Handle:pack)
       case 509: strcopy(Classname, 64, "weapon_knife_tactical");
       case 512: strcopy(Classname, 64, "weapon_knife_falchion");
       case 515: strcopy(Classname, 64, "weapon_knife_butterfly");
+      case 516: strcopy(Classname, 64, "weapon_knife_push");
     }
     
     new value = 0;  //get the skin id
@@ -689,482 +1074,14 @@ public Action:Last(Handle:timer, Handle:pack)
     Format(Classname_wearname, sizeof(Classname_wearname), "%s%s", Classname, "_wear");
     GetTrieValue(tree[client], Classname_wearname, storedWear);
     
+    //Get stored seed value
+    new storedSeed = DEFAULT_SEED;
+    
+    decl String:Classname_seed[64];
+    Format(Classname_seed, sizeof(Classname_seed), "%s%s", Classname, "_seed");
+    GetTrieValue(tree[client], Classname_seed, storedSeed);
+    
     //Change paint to proper skin with proper wear
-    ChangePaint(client, weapon, Classname, weaponindex, storedWear);
+    ChangePaint(client, weapon, Classname, weaponindex, storedWear, storedSeed);
   }
-}
-
-CreateTree(client, String:cookie1[100],String:cookie2[100],String:cookie3[100],String:cookie4[100],String:cookie5[100],String:cookie6[100],String:cookie7[100])
-{
-  tree[client] = CreateTrie();
-
-  //Here me construct the trie using values from the cookie
-  //We break up each cookie and load in the values
-  
-  decl String:skinWearPair[2][9]; //will hold our skin code|wear float pairs.
-  
-  //Cookie 1
-  decl String:splitcookie1[6][14];
-  ExplodeString(cookie1, ";", splitcookie1, sizeof(splitcookie1), sizeof(splitcookie1[]));
-  
-  ExplodeString(splitcookie1[0], "|", skinWearPair, sizeof(skinWearPair), sizeof(skinWearPair[]));
-  SetTrieValue(tree[client], "weapon_negev", StringToInt(skinWearPair[0]));
-  SetTrieValue(tree[client], "weapon_negev_wear", StringToFloat(skinWearPair[1]));
-  Format(skinWearPair[0], sizeof(skinWearPair[]), "%s", "");
-  Format(skinWearPair[1], sizeof(skinWearPair[]), "%s", "");
-  
-  ExplodeString(splitcookie1[1], "|", skinWearPair, sizeof(skinWearPair), sizeof(skinWearPair[]));
-  SetTrieValue(tree[client], "weapon_m249", StringToInt(skinWearPair[0]));
-  SetTrieValue(tree[client], "weapon_m249_wear", StringToFloat(skinWearPair[1]));
-  Format(skinWearPair[0], sizeof(skinWearPair[]), "%s", "");
-  Format(skinWearPair[1], sizeof(skinWearPair[]), "%s", "");
-  
-  ExplodeString(splitcookie1[2], "|", skinWearPair, sizeof(skinWearPair), sizeof(skinWearPair[]));
-  SetTrieValue(tree[client], "weapon_bizon", StringToInt(skinWearPair[0]));
-  SetTrieValue(tree[client], "weapon_bizon_wear", StringToFloat(skinWearPair[1]));
-  Format(skinWearPair[0], sizeof(skinWearPair[]), "%s", "");
-  Format(skinWearPair[1], sizeof(skinWearPair[]), "%s", "");
-  
-  ExplodeString(splitcookie1[3], "|", skinWearPair, sizeof(skinWearPair), sizeof(skinWearPair[]));
-  SetTrieValue(tree[client], "weapon_p90", StringToInt(skinWearPair[0]));
-  SetTrieValue(tree[client], "weapon_p90_wear", StringToFloat(skinWearPair[1]));
-  Format(skinWearPair[0], sizeof(skinWearPair[]), "%s", "");
-  Format(skinWearPair[1], sizeof(skinWearPair[]), "%s", "");
-  
-  ExplodeString(splitcookie1[4], "|", skinWearPair, sizeof(skinWearPair), sizeof(skinWearPair[]));
-  SetTrieValue(tree[client], "weapon_scar20", StringToInt(skinWearPair[0]));
-  SetTrieValue(tree[client], "weapon_scar20_wear", StringToFloat(skinWearPair[1]));
-  Format(skinWearPair[0], sizeof(skinWearPair[]), "%s", "");
-  Format(skinWearPair[1], sizeof(skinWearPair[]), "%s", "");
-  
-  ExplodeString(splitcookie1[5], "|", skinWearPair, sizeof(skinWearPair), sizeof(skinWearPair[]));
-  SetTrieValue(tree[client], "weapon_g3sg1", StringToInt(skinWearPair[0]));
-  SetTrieValue(tree[client], "weapon_g3sg1_wear", StringToFloat(skinWearPair[1]));
-  Format(skinWearPair[0], sizeof(skinWearPair[]), "%s", "");
-  Format(skinWearPair[1], sizeof(skinWearPair[]), "%s", "");
-  
-  //Cookie 2
-  decl String:splitcookie2[6][14];
-  ExplodeString(cookie2, ";", splitcookie2, sizeof(splitcookie2), sizeof(splitcookie2[]));
-  
-  ExplodeString(splitcookie2[0], "|", skinWearPair, sizeof(skinWearPair), sizeof(skinWearPair[]));
-  SetTrieValue(tree[client], "weapon_m4a1", StringToInt(skinWearPair[0]));
-  SetTrieValue(tree[client], "weapon_m4a1_wear", StringToFloat(skinWearPair[1]));
-  Format(skinWearPair[0], sizeof(skinWearPair[]), "%s", "");
-  Format(skinWearPair[1], sizeof(skinWearPair[]), "%s", "");
-  
-  ExplodeString(splitcookie2[1], "|", skinWearPair, sizeof(skinWearPair), sizeof(skinWearPair[]));
-  SetTrieValue(tree[client], "weapon_m4a1_silencer", StringToInt(skinWearPair[0]));
-  SetTrieValue(tree[client], "weapon_m4a1_silencer_wear", StringToFloat(skinWearPair[1]));
-  Format(skinWearPair[0], sizeof(skinWearPair[]), "%s", "");
-  Format(skinWearPair[1], sizeof(skinWearPair[]), "%s", "");
-  
-  ExplodeString(splitcookie2[2], "|", skinWearPair, sizeof(skinWearPair), sizeof(skinWearPair[]));
-  SetTrieValue(tree[client], "weapon_ak47", StringToInt(skinWearPair[0]));
-  SetTrieValue(tree[client], "weapon_ak47_wear", StringToFloat(skinWearPair[1]));
-  Format(skinWearPair[0], sizeof(skinWearPair[]), "%s", "");
-  Format(skinWearPair[1], sizeof(skinWearPair[]), "%s", "");
-  
-  ExplodeString(splitcookie2[3], "|", skinWearPair, sizeof(skinWearPair), sizeof(skinWearPair[]));
-  SetTrieValue(tree[client], "weapon_aug", StringToInt(skinWearPair[0]));
-  SetTrieValue(tree[client], "weapon_aug_wear", StringToFloat(skinWearPair[1]));
-  Format(skinWearPair[0], sizeof(skinWearPair[]), "%s", "");
-  Format(skinWearPair[1], sizeof(skinWearPair[]), "%s", "");
-  
-  ExplodeString(splitcookie2[4], "|", skinWearPair, sizeof(skinWearPair), sizeof(skinWearPair[]));
-  SetTrieValue(tree[client], "weapon_galilar", StringToInt(skinWearPair[0]));
-  SetTrieValue(tree[client], "weapon_galilar_wear", StringToFloat(skinWearPair[1]));
-  Format(skinWearPair[0], sizeof(skinWearPair[]), "%s", "");
-  Format(skinWearPair[1], sizeof(skinWearPair[]), "%s", "");
-  
-  ExplodeString(splitcookie2[5], "|", skinWearPair, sizeof(skinWearPair), sizeof(skinWearPair[]));
-  SetTrieValue(tree[client], "weapon_awp", StringToInt(skinWearPair[0]));
-  SetTrieValue(tree[client], "weapon_awp_wear", StringToFloat(skinWearPair[1]));
-  Format(skinWearPair[0], sizeof(skinWearPair[]), "%s", "");
-  Format(skinWearPair[1], sizeof(skinWearPair[]), "%s", "");
-  
-  //Cookie 3
-  decl String:splitcookie3[6][14];
-  ExplodeString(cookie3, ";", splitcookie3, sizeof(splitcookie3), sizeof(splitcookie3[]));
-  
-  ExplodeString(splitcookie3[0], "|", skinWearPair, sizeof(skinWearPair), sizeof(skinWearPair[]));
-  SetTrieValue(tree[client], "weapon_sg556", StringToInt(skinWearPair[0]));
-  SetTrieValue(tree[client], "weapon_sg556_wear", StringToFloat(skinWearPair[1]));
-  Format(skinWearPair[0], sizeof(skinWearPair[]), "%s", "");
-  Format(skinWearPair[1], sizeof(skinWearPair[]), "%s", "");
-  
-  ExplodeString(splitcookie3[1], "|", skinWearPair, sizeof(skinWearPair), sizeof(skinWearPair[]));
-  SetTrieValue(tree[client], "weapon_ump45", StringToInt(skinWearPair[0]));
-  SetTrieValue(tree[client], "weapon_ump45_wear", StringToFloat(skinWearPair[1]));
-  Format(skinWearPair[0], sizeof(skinWearPair[]), "%s", "");
-  Format(skinWearPair[1], sizeof(skinWearPair[]), "%s", "");
-  
-  ExplodeString(splitcookie3[2], "|", skinWearPair, sizeof(skinWearPair), sizeof(skinWearPair[]));
-  SetTrieValue(tree[client], "weapon_mp7", StringToInt(skinWearPair[0]));
-  SetTrieValue(tree[client], "weapon_mp7_wear", StringToFloat(skinWearPair[1]));
-  Format(skinWearPair[0], sizeof(skinWearPair[]), "%s", "");
-  Format(skinWearPair[1], sizeof(skinWearPair[]), "%s", "");
-  
-  ExplodeString(splitcookie3[3], "|", skinWearPair, sizeof(skinWearPair), sizeof(skinWearPair[]));
-  SetTrieValue(tree[client], "weapon_famas", StringToInt(skinWearPair[0]));
-  SetTrieValue(tree[client], "weapon_famas_wear", StringToFloat(skinWearPair[1]));
-  Format(skinWearPair[0], sizeof(skinWearPair[]), "%s", "");
-  Format(skinWearPair[1], sizeof(skinWearPair[]), "%s", "");
-  
-  ExplodeString(splitcookie3[4], "|", skinWearPair, sizeof(skinWearPair), sizeof(skinWearPair[]));
-  SetTrieValue(tree[client], "weapon_mp9", StringToInt(skinWearPair[0]));
-  SetTrieValue(tree[client], "weapon_mp9_wear", StringToFloat(skinWearPair[1]));
-  Format(skinWearPair[0], sizeof(skinWearPair[]), "%s", "");
-  Format(skinWearPair[1], sizeof(skinWearPair[]), "%s", "");
-  
-  ExplodeString(splitcookie3[5], "|", skinWearPair, sizeof(skinWearPair), sizeof(skinWearPair[]));
-  SetTrieValue(tree[client], "weapon_mac10", StringToInt(skinWearPair[0]));
-  SetTrieValue(tree[client], "weapon_mac10_wear", StringToFloat(skinWearPair[1]));
-  Format(skinWearPair[0], sizeof(skinWearPair[]), "%s", "");
-  Format(skinWearPair[1], sizeof(skinWearPair[]), "%s", "");
-  
-  //Cookie 4
-  decl String:splitcookie4[6][14];
-  ExplodeString(cookie4, ";", splitcookie4, sizeof(splitcookie4), sizeof(splitcookie4[]));
-  
-  ExplodeString(splitcookie4[0], "|", skinWearPair, sizeof(skinWearPair), sizeof(skinWearPair[]));
-  SetTrieValue(tree[client], "weapon_ssg08", StringToInt(skinWearPair[0]));
-  SetTrieValue(tree[client], "weapon_ssg08_wear", StringToFloat(skinWearPair[1]));
-  Format(skinWearPair[0], sizeof(skinWearPair[]), "%s", "");
-  Format(skinWearPair[1], sizeof(skinWearPair[]), "%s", "");
-  
-  ExplodeString(splitcookie4[1], "|", skinWearPair, sizeof(skinWearPair), sizeof(skinWearPair[]));
-  SetTrieValue(tree[client], "weapon_nova", StringToInt(skinWearPair[0]));
-  SetTrieValue(tree[client], "weapon_nova_wear", StringToFloat(skinWearPair[1]));
-  Format(skinWearPair[0], sizeof(skinWearPair[]), "%s", "");
-  Format(skinWearPair[1], sizeof(skinWearPair[]), "%s", "");
-  
-  ExplodeString(splitcookie4[2], "|", skinWearPair, sizeof(skinWearPair), sizeof(skinWearPair[]));
-  SetTrieValue(tree[client], "weapon_xm1014", StringToInt(skinWearPair[0]));
-  SetTrieValue(tree[client], "weapon_xm1014_wear", StringToFloat(skinWearPair[1]));
-  Format(skinWearPair[0], sizeof(skinWearPair[]), "%s", "");
-  Format(skinWearPair[1], sizeof(skinWearPair[]), "%s", "");
-  
-  ExplodeString(splitcookie4[3], "|", skinWearPair, sizeof(skinWearPair), sizeof(skinWearPair[]));
-  SetTrieValue(tree[client], "weapon_sawedoff", StringToInt(skinWearPair[0]));
-  SetTrieValue(tree[client], "weapon_sawedoff_wear", StringToFloat(skinWearPair[1]));
-  Format(skinWearPair[0], sizeof(skinWearPair[]), "%s", "");
-  Format(skinWearPair[1], sizeof(skinWearPair[]), "%s", "");
-  
-  ExplodeString(splitcookie4[4], "|", skinWearPair, sizeof(skinWearPair), sizeof(skinWearPair[]));
-  SetTrieValue(tree[client], "weapon_mag7", StringToInt(skinWearPair[0]));
-  SetTrieValue(tree[client], "weapon_mag7_wear", StringToFloat(skinWearPair[1]));
-  Format(skinWearPair[0], sizeof(skinWearPair[]), "%s", "");
-  Format(skinWearPair[1], sizeof(skinWearPair[]), "%s", "");
-  
-  ExplodeString(splitcookie4[5], "|", skinWearPair, sizeof(skinWearPair), sizeof(skinWearPair[]));
-  SetTrieValue(tree[client], "weapon_elite", StringToInt(skinWearPair[0]));
-  SetTrieValue(tree[client], "weapon_elite_wear", StringToFloat(skinWearPair[1]));
-  Format(skinWearPair[0], sizeof(skinWearPair[]), "%s", "");
-  Format(skinWearPair[1], sizeof(skinWearPair[]), "%s", "");
-  
-  //Cookie 5
-  decl String:splitcookie5[6][14];
-  ExplodeString(cookie5, ";", splitcookie5, sizeof(splitcookie5), sizeof(splitcookie5[]));
-  
-  ExplodeString(splitcookie5[0], "|", skinWearPair, sizeof(skinWearPair), sizeof(skinWearPair[]));
-  SetTrieValue(tree[client], "weapon_deagle", StringToInt(skinWearPair[0]));
-  SetTrieValue(tree[client], "weapon_deagle_wear", StringToFloat(skinWearPair[1]));
-  Format(skinWearPair[0], sizeof(skinWearPair[]), "%s", "");
-  Format(skinWearPair[1], sizeof(skinWearPair[]), "%s", "");
-  
-  ExplodeString(splitcookie5[1], "|", skinWearPair, sizeof(skinWearPair), sizeof(skinWearPair[]));
-  SetTrieValue(tree[client], "weapon_tec9", StringToInt(skinWearPair[0]));
-  SetTrieValue(tree[client], "weapon_tec9_wear", StringToFloat(skinWearPair[1]));
-  Format(skinWearPair[0], sizeof(skinWearPair[]), "%s", "");
-  Format(skinWearPair[1], sizeof(skinWearPair[]), "%s", "");
-  
-  ExplodeString(splitcookie5[2], "|", skinWearPair, sizeof(skinWearPair), sizeof(skinWearPair[]));
-  SetTrieValue(tree[client], "weapon_fiveseven", StringToInt(skinWearPair[0]));
-  SetTrieValue(tree[client], "weapon_fiveseven_wear", StringToFloat(skinWearPair[1]));
-  Format(skinWearPair[0], sizeof(skinWearPair[]), "%s", "");
-  Format(skinWearPair[1], sizeof(skinWearPair[]), "%s", "");
-  
-  ExplodeString(splitcookie5[3], "|", skinWearPair, sizeof(skinWearPair), sizeof(skinWearPair[]));
-  SetTrieValue(tree[client], "weapon_cz75a", StringToInt(skinWearPair[0]));
-  SetTrieValue(tree[client], "weapon_cz75a_wear", StringToFloat(skinWearPair[1]));
-  Format(skinWearPair[0], sizeof(skinWearPair[]), "%s", "");
-  Format(skinWearPair[1], sizeof(skinWearPair[]), "%s", "");
-  
-  ExplodeString(splitcookie5[4], "|", skinWearPair, sizeof(skinWearPair), sizeof(skinWearPair[]));
-  SetTrieValue(tree[client], "weapon_glock", StringToInt(skinWearPair[0]));
-  SetTrieValue(tree[client], "weapon_glock_wear", StringToFloat(skinWearPair[1]));
-  Format(skinWearPair[0], sizeof(skinWearPair[]), "%s", "");
-  Format(skinWearPair[1], sizeof(skinWearPair[]), "%s", "");
-  
-  ExplodeString(splitcookie5[5], "|", skinWearPair, sizeof(skinWearPair), sizeof(skinWearPair[]));
-  SetTrieValue(tree[client], "weapon_usp_silencer", StringToInt(skinWearPair[0]));
-  SetTrieValue(tree[client], "weapon_usp_silencer_wear", StringToFloat(skinWearPair[1]));
-  Format(skinWearPair[0], sizeof(skinWearPair[]), "%s", "");
-  Format(skinWearPair[1], sizeof(skinWearPair[]), "%s", "");
-  
-  //Cookie 6
-  decl String:splitcookie6[6][14];
-  ExplodeString(cookie6, ";", splitcookie6, sizeof(splitcookie6), sizeof(splitcookie6[]));
-  
-  ExplodeString(splitcookie6[0], "|", skinWearPair, sizeof(skinWearPair), sizeof(skinWearPair[]));
-  SetTrieValue(tree[client], "weapon_p250", StringToInt(skinWearPair[0]));
-  SetTrieValue(tree[client], "weapon_p250_wear", StringToFloat(skinWearPair[1]));
-  Format(skinWearPair[0], sizeof(skinWearPair[]), "%s", "");
-  Format(skinWearPair[1], sizeof(skinWearPair[]), "%s", "");
-  
-  ExplodeString(splitcookie6[1], "|", skinWearPair, sizeof(skinWearPair), sizeof(skinWearPair[]));
-  SetTrieValue(tree[client], "weapon_hkp2000", StringToInt(skinWearPair[0]));
-  SetTrieValue(tree[client], "weapon_hkp2000_wear", StringToFloat(skinWearPair[1]));
-  Format(skinWearPair[0], sizeof(skinWearPair[]), "%s", "");
-  Format(skinWearPair[1], sizeof(skinWearPair[]), "%s", "");
-  
-  ExplodeString(splitcookie6[2], "|", skinWearPair, sizeof(skinWearPair), sizeof(skinWearPair[]));
-  SetTrieValue(tree[client], "weapon_bayonet", StringToInt(skinWearPair[0]));
-  SetTrieValue(tree[client], "weapon_bayonet_wear", StringToFloat(skinWearPair[1]));
-  Format(skinWearPair[0], sizeof(skinWearPair[]), "%s", "");
-  Format(skinWearPair[1], sizeof(skinWearPair[]), "%s", "");
-  
-  ExplodeString(splitcookie6[3], "|", skinWearPair, sizeof(skinWearPair), sizeof(skinWearPair[]));
-  SetTrieValue(tree[client], "weapon_knife_gut", StringToInt(skinWearPair[0]));
-  SetTrieValue(tree[client], "weapon_knife_gut_wear", StringToFloat(skinWearPair[1]));
-  Format(skinWearPair[0], sizeof(skinWearPair[]), "%s", "");
-  Format(skinWearPair[1], sizeof(skinWearPair[]), "%s", "");
-  
-  ExplodeString(splitcookie6[4], "|", skinWearPair, sizeof(skinWearPair), sizeof(skinWearPair[]));
-  SetTrieValue(tree[client], "weapon_knife_flip", StringToInt(skinWearPair[0]));
-  SetTrieValue(tree[client], "weapon_knife_flip_wear", StringToFloat(skinWearPair[1]));
-  Format(skinWearPair[0], sizeof(skinWearPair[]), "%s", "");
-  Format(skinWearPair[1], sizeof(skinWearPair[]), "%s", "");
-  
-  ExplodeString(splitcookie6[5], "|", skinWearPair, sizeof(skinWearPair), sizeof(skinWearPair[]));
-  SetTrieValue(tree[client], "weapon_knife_m9_bayonet", StringToInt(skinWearPair[0]));
-  SetTrieValue(tree[client], "weapon_knife_m9_bayonet_wear", StringToFloat(skinWearPair[1]));
-  Format(skinWearPair[0], sizeof(skinWearPair[]), "%s", "");
-  Format(skinWearPair[1], sizeof(skinWearPair[]), "%s", "");
-  
-  //Cookie 7
-  decl String:splitcookie7[5][14]; //Short by 1 as exhausted weapons
-  ExplodeString(cookie7, ";", splitcookie7, sizeof(splitcookie7), sizeof(splitcookie7[]));
-  
-  ExplodeString(splitcookie7[0], "|", skinWearPair, sizeof(skinWearPair), sizeof(skinWearPair[]));
-  SetTrieValue(tree[client], "weapon_knife_karambit", StringToInt(skinWearPair[0]));
-  SetTrieValue(tree[client], "weapon_knife_karambit_wear", StringToFloat(skinWearPair[1]));
-  Format(skinWearPair[0], sizeof(skinWearPair[]), "%s", "");
-  Format(skinWearPair[1], sizeof(skinWearPair[]), "%s", "");
-  
-  ExplodeString(splitcookie7[1], "|", skinWearPair, sizeof(skinWearPair), sizeof(skinWearPair[]));
-  SetTrieValue(tree[client], "weapon_knife_tactical", StringToInt(skinWearPair[0]));
-  SetTrieValue(tree[client], "weapon_knife_tactical_wear", StringToFloat(skinWearPair[1]));
-  Format(skinWearPair[0], sizeof(skinWearPair[]), "%s", "");
-  Format(skinWearPair[1], sizeof(skinWearPair[]), "%s", "");
-  
-  ExplodeString(splitcookie7[2], "|", skinWearPair, sizeof(skinWearPair), sizeof(skinWearPair[]));
-  SetTrieValue(tree[client], "weapon_knife_falchion", StringToInt(skinWearPair[0]));
-  SetTrieValue(tree[client], "weapon_knife_falchion_wear", StringToFloat(skinWearPair[1]));
-  Format(skinWearPair[0], sizeof(skinWearPair[]), "%s", "");
-  Format(skinWearPair[1], sizeof(skinWearPair[]), "%s", "");
-  
-  ExplodeString(splitcookie7[3], "|", skinWearPair, sizeof(skinWearPair), sizeof(skinWearPair[]));
-  SetTrieValue(tree[client], "weapon_knife_butterfly", StringToInt(skinWearPair[0]));
-  SetTrieValue(tree[client], "weapon_knife_butterfly_wear", StringToFloat(skinWearPair[1]));
-  Format(skinWearPair[0], sizeof(skinWearPair[]), "%s", "");
-  Format(skinWearPair[1], sizeof(skinWearPair[]), "%s", "");
-  
-  ExplodeString(splitcookie7[4], "|", skinWearPair, sizeof(skinWearPair), sizeof(skinWearPair[]));
-  SetTrieValue(tree[client], "weapon_c4", StringToInt(skinWearPair[0]));
-  SetTrieValue(tree[client], "weapon_c4_wear", StringToFloat(skinWearPair[1]));
-  Format(skinWearPair[0], sizeof(skinWearPair[]), "%s", "");
-  Format(skinWearPair[1], sizeof(skinWearPair[]), "%s", "");
-  
-}
-
-SaveCookies(client)
-{
-  decl String:cookie1[100],String:cookie2[100],String:cookie3[100],String:cookie4[100],String:cookie5[100],String:cookie6[100],String:cookie7[100];
-  
-  new value;
-  new Float:floatvalue;
-  
-  //Cookie 1
-  GetTrieValue(tree[client], "weapon_negev", value);
-  GetTrieValue(tree[client], "weapon_negev_wear", floatvalue);
-  Format(cookie1, sizeof(cookie1), "%i|%f", value, floatvalue);
-  
-  GetTrieValue(tree[client], "weapon_m249", value);
-  GetTrieValue(tree[client], "weapon_m249_wear", floatvalue);
-  Format(cookie1, sizeof(cookie1), "%s;%i|%f", cookie1, value, floatvalue);
-  
-  GetTrieValue(tree[client], "weapon_bizon", value);
-  GetTrieValue(tree[client], "weapon_bizon_wear", floatvalue);
-  Format(cookie1, sizeof(cookie1), "%s;%i|%f", cookie1, value, floatvalue);
-  
-  GetTrieValue(tree[client], "weapon_p90", value);
-  GetTrieValue(tree[client], "weapon_p90_wear", floatvalue);
-  Format(cookie1, sizeof(cookie1), "%s;%i|%f", cookie1, value, floatvalue);
-  
-  GetTrieValue(tree[client], "weapon_scar20", value);
-  GetTrieValue(tree[client], "weapon_scar20_wear", floatvalue);
-  Format(cookie1, sizeof(cookie1), "%s;%i|%f", cookie1, value, floatvalue);
-  
-  GetTrieValue(tree[client], "weapon_g3sg1", value);
-  GetTrieValue(tree[client], "weapon_g3sg1_wear", floatvalue);
-  Format(cookie1, sizeof(cookie1), "%s;%i|%f", cookie1, value, floatvalue);
-  
-  //Cookie 2
-  GetTrieValue(tree[client], "weapon_m4a1", value);
-  GetTrieValue(tree[client], "weapon_m4a1_wear", floatvalue);
-  Format(cookie2, sizeof(cookie2), "%i|%f", value, floatvalue);
-  
-  GetTrieValue(tree[client], "weapon_m4a1_silencer", value);
-  GetTrieValue(tree[client], "weapon_m4a1_silencer_wear", floatvalue);
-  Format(cookie2, sizeof(cookie2), "%s;%i|%f", cookie2, value, floatvalue);
-  
-  GetTrieValue(tree[client], "weapon_ak47", value);
-  GetTrieValue(tree[client], "weapon_ak47_wear", floatvalue);
-  Format(cookie2, sizeof(cookie2), "%s;%i|%f", cookie2, value, floatvalue);
-  
-  GetTrieValue(tree[client], "weapon_aug", value);
-  GetTrieValue(tree[client], "weapon_aug_wear", floatvalue);
-  Format(cookie2, sizeof(cookie2), "%s;%i|%f", cookie2, value, floatvalue);
-  
-  GetTrieValue(tree[client], "weapon_galilar", value);
-  GetTrieValue(tree[client], "weapon_galilar_wear", floatvalue);
-  Format(cookie2, sizeof(cookie2), "%s;%i|%f", cookie2, value, floatvalue);
-  
-  GetTrieValue(tree[client], "weapon_awp", value);
-  GetTrieValue(tree[client], "weapon_awp_wear", floatvalue);
-  Format(cookie2, sizeof(cookie2), "%s;%i|%f", cookie2, value, floatvalue);
-  
-  //Cookie 3
-  GetTrieValue(tree[client], "weapon_sg556", value);
-  GetTrieValue(tree[client], "weapon_sg556_wear", floatvalue);
-  Format(cookie3, sizeof(cookie3), "%i|%f", value, floatvalue);
-  
-  GetTrieValue(tree[client], "weapon_ump45", value);
-  GetTrieValue(tree[client], "weapon_ump45_wear", floatvalue);
-  Format(cookie3, sizeof(cookie3), "%s;%i|%f", cookie3, value, floatvalue);
-  
-  GetTrieValue(tree[client], "weapon_mp7", value);
-  GetTrieValue(tree[client], "weapon_mp7_wear", floatvalue);
-  Format(cookie3, sizeof(cookie3), "%s;%i|%f", cookie3, value, floatvalue);
-  
-  GetTrieValue(tree[client], "weapon_famas", value);
-  GetTrieValue(tree[client], "weapon_famas_wear", floatvalue);
-  Format(cookie3, sizeof(cookie3), "%s;%i|%f", cookie3, value, floatvalue);
-  
-  GetTrieValue(tree[client], "weapon_mp9", value);
-  GetTrieValue(tree[client], "weapon_mp9_wear", floatvalue);
-  Format(cookie3, sizeof(cookie3), "%s;%i|%f", cookie3, value, floatvalue);
-  
-  GetTrieValue(tree[client], "weapon_mac10", value);
-  GetTrieValue(tree[client], "weapon_mac10_wear", floatvalue);
-  Format(cookie3, sizeof(cookie3), "%s;%i|%f", cookie3, value, floatvalue);
-  
-  //Cookie 4
-  GetTrieValue(tree[client], "weapon_ssg08", value);
-  GetTrieValue(tree[client], "weapon_ssg08_wear", floatvalue);
-  Format(cookie4, sizeof(cookie4), "%i|%f", value, floatvalue);
-  
-  GetTrieValue(tree[client], "weapon_nova", value);
-  GetTrieValue(tree[client], "weapon_nova_wear", floatvalue);
-  Format(cookie4, sizeof(cookie4), "%s;%i|%f", cookie4, value, floatvalue);
-  
-  GetTrieValue(tree[client], "weapon_xm1014", value);
-  GetTrieValue(tree[client], "weapon_xm1014_wear", floatvalue);
-  Format(cookie4, sizeof(cookie4), "%s;%i|%f", cookie4, value, floatvalue);
-  
-  GetTrieValue(tree[client], "weapon_sawedoff", value);
-  GetTrieValue(tree[client], "weapon_sawedoff_wear", floatvalue);
-  Format(cookie4, sizeof(cookie4), "%s;%i|%f", cookie4, value, floatvalue);
-  
-  GetTrieValue(tree[client], "weapon_mag7", value);
-  GetTrieValue(tree[client], "weapon_mag7_wear", floatvalue);
-  Format(cookie4, sizeof(cookie4), "%s;%i|%f", cookie4, value, floatvalue);
-  
-  GetTrieValue(tree[client], "weapon_elite", value);
-  GetTrieValue(tree[client], "weapon_elite_wear", floatvalue);
-  Format(cookie4, sizeof(cookie4), "%s;%i|%f", cookie4, value, floatvalue);
-  
-  //Cookie 5
-  GetTrieValue(tree[client], "weapon_deagle", value);
-  GetTrieValue(tree[client], "weapon_deagle_wear", floatvalue);
-  Format(cookie5, sizeof(cookie5), "%i|%f", value, floatvalue);
-  
-  GetTrieValue(tree[client], "weapon_tec9", value);
-  GetTrieValue(tree[client], "weapon_tec9_wear", floatvalue);
-  Format(cookie5, sizeof(cookie5), "%s;%i|%f", cookie5, value, floatvalue);
-  
-  GetTrieValue(tree[client], "weapon_fiveseven", value);
-  GetTrieValue(tree[client], "weapon_fiveseven_wear", floatvalue);
-  Format(cookie5, sizeof(cookie5), "%s;%i|%f", cookie5, value, floatvalue);
-  
-  GetTrieValue(tree[client], "weapon_cz75a", value);
-  GetTrieValue(tree[client], "weapon_cz75a_wear", floatvalue);
-  Format(cookie5, sizeof(cookie5), "%s;%i|%f", cookie5, value, floatvalue);
-  
-  GetTrieValue(tree[client], "weapon_glock", value);
-  GetTrieValue(tree[client], "weapon_glock_wear", floatvalue);
-  Format(cookie5, sizeof(cookie5), "%s;%i|%f", cookie5, value, floatvalue);
-  
-  GetTrieValue(tree[client], "weapon_usp_silencer", value);
-  GetTrieValue(tree[client], "weapon_usp_silencer_wear", floatvalue);
-  Format(cookie5, sizeof(cookie5), "%s;%i|%f", cookie5, value, floatvalue);
-  
-  //Cookie 6
-  GetTrieValue(tree[client], "weapon_p250", value);
-  GetTrieValue(tree[client], "weapon_p250_wear", floatvalue);
-  Format(cookie6, sizeof(cookie6), "%i|%f", value, floatvalue);
-  
-  GetTrieValue(tree[client], "weapon_hkp2000", value);
-  GetTrieValue(tree[client], "weapon_hkp2000_wear", floatvalue);
-  Format(cookie6, sizeof(cookie6), "%s;%i|%f", cookie6, value, floatvalue);
-  
-  GetTrieValue(tree[client], "weapon_bayonet", value);
-  GetTrieValue(tree[client], "weapon_bayonet_wear", floatvalue);
-  Format(cookie6, sizeof(cookie6), "%s;%i|%f", cookie6, value, floatvalue);
-  
-  GetTrieValue(tree[client], "weapon_knife_gut", value);
-  GetTrieValue(tree[client], "weapon_knife_gut_wear", floatvalue);
-  Format(cookie6, sizeof(cookie6), "%s;%i|%f", cookie6, value, floatvalue);
-  
-  GetTrieValue(tree[client], "weapon_knife_flip", value);
-  GetTrieValue(tree[client], "weapon_knife_flip_wear", floatvalue);
-  Format(cookie6, sizeof(cookie6), "%s;%i|%f", cookie6, value, floatvalue);
-  
-  GetTrieValue(tree[client], "weapon_knife_m9_bayonet", value);
-  GetTrieValue(tree[client], "weapon_knife_m9_bayonet_wear", floatvalue);
-  Format(cookie6, sizeof(cookie6), "%s;%i|%f", cookie6, value, floatvalue);
-  
-  //Cookie 7 (only has 5 entries)
-  GetTrieValue(tree[client], "weapon_knife_karambit", value);
-  GetTrieValue(tree[client], "weapon_knife_karambit_wear", floatvalue);
-  Format(cookie7, sizeof(cookie7), "%i|%f", value, floatvalue);
-  
-  GetTrieValue(tree[client], "weapon_knife_tactical", value);
-  GetTrieValue(tree[client], "weapon_knife_tactical_wear", floatvalue);
-  Format(cookie7, sizeof(cookie7), "%s;%i|%f", cookie7, value, floatvalue);
-  
-  GetTrieValue(tree[client], "weapon_knife_falchion", value);
-  GetTrieValue(tree[client], "weapon_knife_falchion_wear", floatvalue);
-  Format(cookie7, sizeof(cookie7), "%s;%i|%f", cookie7, value, floatvalue);
-  
-  GetTrieValue(tree[client], "weapon_knife_butterfly", value);
-  GetTrieValue(tree[client], "weapon_knife_butterfly_wear", floatvalue);
-  Format(cookie7, sizeof(cookie7), "%s;%i|%f", cookie7, value, floatvalue);
-  
-  GetTrieValue(tree[client], "weapon_c4", value);
-  GetTrieValue(tree[client], "weapon_c4_wear", floatvalue);
-  Format(cookie7, sizeof(cookie7), "%s;%i|%f", cookie7, value, floatvalue);
-  
-  
-  //Set client cookies
-  SetClientCookie(client, h_cookie_SkinWear1, cookie1);
-  SetClientCookie(client, h_cookie_SkinWear2, cookie2);
-  SetClientCookie(client, h_cookie_SkinWear3, cookie3);
-  SetClientCookie(client, h_cookie_SkinWear4, cookie4);
-  SetClientCookie(client, h_cookie_SkinWear5, cookie5);
-  SetClientCookie(client, h_cookie_SkinWear6, cookie6);
-  SetClientCookie(client, h_cookie_SkinWear7, cookie7);
-  
 }
