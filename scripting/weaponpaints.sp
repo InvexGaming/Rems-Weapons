@@ -8,9 +8,29 @@
 #undef REQUIRE_PLUGIN
 #include <lastrequest>
 
-#define VERSION "2.04"
+#pragma newdecls required
 
-#define MAX_PAINTS 800
+// Plugin Informaiton  
+#define VERSION "2.05"
+
+public Plugin myinfo =
+{
+  name = "CS:GO VIP Plugin",
+  author = "Invex | Byte",
+  description = "Special actions for VIP players.",
+  version = VERSION,
+  url = "http://www.invexgaming.com.au"
+};
+
+//Definitions
+#define MAX_PAINTS 600
+#define NUM_CSGO_WEAPONS 43
+#define CSGO_MAX_WEAPON_NAME_LENGTH 25
+#define IDWEARSEED_LENGTH 30
+
+#define WS_ANTI_FLOOD_TIME 0.75
+#define MAX_DIGITS_WEAR 10
+
 #define TYPE_MENU 0
 #define TYPE_QUICK 1
 
@@ -19,6 +39,8 @@
 #define DEFAULT_WEAR -1.0
 #define DEFAULT_SEED 0
 
+//Listing variable used to store information about each paint entry
+//Old-delc used
 enum Listing
 {
   String:listName[64],
@@ -28,56 +50,57 @@ enum Listing
   quality
 }
 
-new Handle:menuw = INVALID_HANDLE;
+//Global variables
 
-new Handle:csgo_weapons;
-new g_paints[MAX_PAINTS][Listing];
-new g_paintCount = 0;
-new String:path_paints[PLATFORM_MAX_PATH];
+//Flags
+AdminFlag wsFlag = Admin_Custom3;
 
+//Handles
+Menu menuw = null;
+Handle db = null;
+Handle tree[MAXPLAYERS+1] = null;
+Handle saytimer = null;
+Handle rtimer = null;
+ArrayList csgo_weapons = null;
 
-new bool:g_hosties = false;
-new bool:g_c4;
-new Handle:cvar_c4;
+//Cvars
+Handle cvar_c4 = null;
+Handle cvar_saytimer = null;
+Handle cvar_rtimer = null;
+Handle cvar_rmenu = null;
+Handle cvar_anti_flood_timer = null;
 
+//Ints
+int g_paints[MAX_PAINTS][Listing];
+int g_paintCount = 0;
+int g_saytimer;
+int g_rtimer;
+int g_rmenu;
 
-new Handle:db = INVALID_HANDLE;
-new String:g_sCmdLogPath[256];
+//Chars
+char path_paints[PLATFORM_MAX_PATH];
+char g_sCmdLogPath[256]; //log filename path
 
-new Handle:tree[MAXPLAYERS+1] = INVALID_HANDLE;
-new bool:isChecked[MAXPLAYERS+1];
+//Booleans
+bool g_hosties = false;
+bool g_c4 = false;
+bool g_antiflood = true;
+bool isChecked[MAXPLAYERS+1] = false;
+bool g_canUseWS[MAXPLAYERS+1] = true; //for anti-flood
 
-new Handle:saytimer;
-new Handle:cvar_saytimer;
-new g_saytimer;
-
-new Handle:rtimer;
-new Handle:cvar_rtimer;
-new g_rtimer;
-
-new Handle:cvar_rmenu;
-new g_rmenu;
-
-public Plugin:myinfo =
+// Plugin Start
+public void OnPluginStart()
 {
-  name = "CS:GO VIP Plugin",
-  author = "Invex | Byte",
-  description = "Special actions for VIP players.",
-  version = VERSION,
-  url = "http://www.invexgaming.com.au"
-};
+  LoadTranslations("weaponpaints.phrases");
 
-public OnPluginStart()
-{
-  LoadTranslations ("weaponpaints.phrases");
-
-  //Create log file
-  for(new i = 0;; i++) {
+  //Store log file path, unique log per plugin load
+  for (int i = 0;; i++) {
     BuildPath(Path_SM, g_sCmdLogPath, sizeof(g_sCmdLogPath), "logs/wpaints_%d.log", i);
     if ( !FileExists(g_sCmdLogPath) )
       break;
   }
   
+  //Flags
   CreateConVar("sm_vipspecial_version", VERSION, "", FCVAR_PLUGIN|FCVAR_SPONLY|FCVAR_REPLICATED|FCVAR_NOTIFY|FCVAR_CHEAT|FCVAR_DONTRECORD);
 
   //Commands
@@ -88,11 +111,13 @@ public OnPluginStart()
   cvar_saytimer = CreateConVar("sm_vipspecial_saytimer", "10", "No description provided (see source). -1.0 = never show the commands in chat");
   cvar_rtimer = CreateConVar("sm_vipspecial_roundtimer", "-1.0", "No description provided (see source). -1.0 = always can use the command");
   cvar_rmenu = CreateConVar("sm_vipspecial_rmenu", "1", "No description provided (see source). 1 = enabled, 0 = disabled.");
+  cvar_anti_flood_timer = CreateConVar("sm_vipspecial_antiflood", "1", "No description provided (see source). 1 = enabled, 0 = disabled.");
   
   g_c4 = GetConVarBool(cvar_c4);
   g_saytimer = GetConVarInt(cvar_saytimer);
   g_rtimer = GetConVarInt(cvar_rtimer);
   g_rmenu = GetConVarBool(cvar_rmenu);
+  g_antiflood = GetConVarBool(cvar_anti_flood_timer);
   
   //Hooks
   HookEvent("round_start", roundStart);
@@ -105,188 +130,188 @@ public OnPluginStart()
   ReadPaints();
   
   //Populate csgo_weapons array
-  if(csgo_weapons != INVALID_HANDLE)
+  if (csgo_weapons != null)
     CloseHandle(csgo_weapons);
   
-  csgo_weapons = CreateArray(128);
+  csgo_weapons = CreateArray(NUM_CSGO_WEAPONS);
+  char weapon[CSGO_MAX_WEAPON_NAME_LENGTH];
   
-  new String:weapon[64];
-  
-  Format(weapon, 64, "weapon_negev");
+  Format(weapon, sizeof(weapon), "weapon_negev");
   PushArrayString(csgo_weapons, weapon);
   
-  Format(weapon, 64, "weapon_m249");
+  Format(weapon, sizeof(weapon), "weapon_m249");
   PushArrayString(csgo_weapons, weapon);
   
-  Format(weapon, 64, "weapon_bizon");
+  Format(weapon, sizeof(weapon), "weapon_bizon");
   PushArrayString(csgo_weapons, weapon);
   
-  Format(weapon, 64, "weapon_p90");
+  Format(weapon, sizeof(weapon), "weapon_p90");
   PushArrayString(csgo_weapons, weapon);
   
-  Format(weapon, 64, "weapon_scar20");
+  Format(weapon, sizeof(weapon), "weapon_scar20");
   PushArrayString(csgo_weapons, weapon);
   
-  Format(weapon, 64, "weapon_g3sg1");
+  Format(weapon, sizeof(weapon), "weapon_g3sg1");
   PushArrayString(csgo_weapons, weapon);
   
-  Format(weapon, 64, "weapon_m4a1");
+  Format(weapon, sizeof(weapon), "weapon_m4a1");
   PushArrayString(csgo_weapons, weapon);
   
-  Format(weapon, 64, "weapon_m4a1_silencer");
+  Format(weapon, sizeof(weapon), "weapon_m4a1_silencer");
   PushArrayString(csgo_weapons, weapon);
   
-  Format(weapon, 64, "weapon_ak47");
+  Format(weapon, sizeof(weapon), "weapon_ak47");
   PushArrayString(csgo_weapons, weapon);
   
-  Format(weapon, 64, "weapon_aug");
+  Format(weapon, sizeof(weapon), "weapon_aug");
   PushArrayString(csgo_weapons, weapon);
   
-  Format(weapon, 64, "weapon_galilar");
+  Format(weapon, sizeof(weapon), "weapon_galilar");
   PushArrayString(csgo_weapons, weapon);
   
-  Format(weapon, 64, "weapon_awp");
+  Format(weapon, sizeof(weapon), "weapon_awp");
   PushArrayString(csgo_weapons, weapon);
   
-  Format(weapon, 64, "weapon_sg556");
+  Format(weapon, sizeof(weapon), "weapon_sg556");
   PushArrayString(csgo_weapons, weapon);
   
-  Format(weapon, 64, "weapon_ump45");
+  Format(weapon, sizeof(weapon), "weapon_ump45");
   PushArrayString(csgo_weapons, weapon);
   
-  Format(weapon, 64, "weapon_mp7");
-  PushArrayString(csgo_weapons, weapon);
-
-  Format(weapon, 64, "weapon_famas");
-  PushArrayString(csgo_weapons, weapon);
-  
-  Format(weapon, 64, "weapon_mp9");
+  Format(weapon, sizeof(weapon), "weapon_mp7");
   PushArrayString(csgo_weapons, weapon);
 
-  Format(weapon, 64, "weapon_mac10");
+  Format(weapon, sizeof(weapon), "weapon_famas");
   PushArrayString(csgo_weapons, weapon);
   
-  Format(weapon, 64, "weapon_ssg08");
+  Format(weapon, sizeof(weapon), "weapon_mp9");
+  PushArrayString(csgo_weapons, weapon);
+
+  Format(weapon, sizeof(weapon), "weapon_mac10");
   PushArrayString(csgo_weapons, weapon);
   
-  Format(weapon, 64, "weapon_nova");
+  Format(weapon, sizeof(weapon), "weapon_ssg08");
   PushArrayString(csgo_weapons, weapon);
   
-  Format(weapon, 64, "weapon_xm1014");
+  Format(weapon, sizeof(weapon), "weapon_nova");
   PushArrayString(csgo_weapons, weapon);
   
-  Format(weapon, 64, "weapon_sawedoff");
+  Format(weapon, sizeof(weapon), "weapon_xm1014");
   PushArrayString(csgo_weapons, weapon);
   
-  Format(weapon, 64, "weapon_mag7");
+  Format(weapon, sizeof(weapon), "weapon_sawedoff");
+  PushArrayString(csgo_weapons, weapon);
+  
+  Format(weapon, sizeof(weapon), "weapon_mag7");
   PushArrayString(csgo_weapons, weapon);
   
   // Secondary weapons
-  Format(weapon, 64, "weapon_elite");
+  Format(weapon, sizeof(weapon), "weapon_elite");
   PushArrayString(csgo_weapons, weapon);
 
-  Format(weapon, 64, "weapon_deagle");
+  Format(weapon, sizeof(weapon), "weapon_deagle");
   PushArrayString(csgo_weapons, weapon);
 
-  Format(weapon, 64, "weapon_revolver");
+  Format(weapon, sizeof(weapon), "weapon_revolver");
   PushArrayString(csgo_weapons, weapon);
   
-  Format(weapon, 64, "weapon_tec9"); 
+  Format(weapon, sizeof(weapon), "weapon_tec9"); 
   PushArrayString(csgo_weapons, weapon);
   
-  Format(weapon, 64, "weapon_fiveseven");
+  Format(weapon, sizeof(weapon), "weapon_fiveseven");
   PushArrayString(csgo_weapons, weapon);
 
-  Format(weapon, 64, "weapon_cz75a");
+  Format(weapon, sizeof(weapon), "weapon_cz75a");
   PushArrayString(csgo_weapons, weapon);
   
-  Format(weapon, 64, "weapon_glock");
+  Format(weapon, sizeof(weapon), "weapon_glock");
   PushArrayString(csgo_weapons, weapon);
   
-  Format(weapon, 64, "weapon_usp_silencer");
+  Format(weapon, sizeof(weapon), "weapon_usp_silencer");
   PushArrayString(csgo_weapons, weapon);
   
-  Format(weapon, 64, "weapon_p250");
+  Format(weapon, sizeof(weapon), "weapon_p250");
   PushArrayString(csgo_weapons, weapon);
   
-  Format(weapon, 64, "weapon_hkp2000");
+  Format(weapon, sizeof(weapon), "weapon_hkp2000");
   PushArrayString(csgo_weapons, weapon);
   
-  Format(weapon, 64, "weapon_bayonet");
+  Format(weapon, sizeof(weapon), "weapon_bayonet");
   PushArrayString(csgo_weapons, weapon);
   
-  Format(weapon, 64, "weapon_knife_gut");
+  Format(weapon, sizeof(weapon), "weapon_knife_gut");
   PushArrayString(csgo_weapons, weapon);
   
-  Format(weapon, 64, "weapon_knife_flip");
+  Format(weapon, sizeof(weapon), "weapon_knife_flip");
   PushArrayString(csgo_weapons, weapon);
   
-  Format(weapon, 64, "weapon_knife_m9_bayonet");
+  Format(weapon, sizeof(weapon), "weapon_knife_m9_bayonet");
   PushArrayString(csgo_weapons, weapon);
   
-  Format(weapon, 64, "weapon_knife_karambit");
+  Format(weapon, sizeof(weapon), "weapon_knife_karambit");
   PushArrayString(csgo_weapons, weapon);
   
-  Format(weapon, 64, "weapon_knife_tactical");
+  Format(weapon, sizeof(weapon), "weapon_knife_tactical");
   PushArrayString(csgo_weapons, weapon);
   
-  Format(weapon, 64, "weapon_knife_butterfly");
+  Format(weapon, sizeof(weapon), "weapon_knife_butterfly");
   PushArrayString(csgo_weapons, weapon);
   
-  Format(weapon, 64, "weapon_c4");
+  Format(weapon, sizeof(weapon), "weapon_c4");
   PushArrayString(csgo_weapons, weapon);
   
-  Format(weapon, 64, "weapon_knife_falchion");
+  Format(weapon, sizeof(weapon), "weapon_knife_falchion");
   PushArrayString(csgo_weapons, weapon);
   
-  Format(weapon, 64, "weapon_knife_push");
+  Format(weapon, sizeof(weapon), "weapon_knife_push");
   PushArrayString(csgo_weapons, weapon);
 
   //Process players and set them up
-  for (new client = 1; client <= MaxClients; client++)
-  {
+  for (int client = 1; client <= MaxClients; ++client) {
     if (!IsClientInGame(client))
       continue;
-      
+    
     OnClientPutInServer(client);
+    
+    if (g_antiflood) g_canUseWS[client] = true;
   }
   
   //Check the database
   CheckDB(true);
 }
 
-public OnConVarChanged(Handle:convar, const String:oldValue[], const String:newValue[])
+//Update variables if convars change
+public void OnConVarChanged(Handle convar, const char[] oldValue, const char[] newValue)
 {
-  if (convar == cvar_c4)
-  {
-    g_c4 = bool:StringToInt(newValue);
+  if (convar == cvar_c4) {
+    g_c4 = view_as<bool>(StringToInt(newValue));
   }
-  else if (convar == cvar_saytimer)
-  {
+  else if (convar == cvar_saytimer) {
     g_saytimer = StringToInt(newValue);
   }
-  else if (convar == cvar_rtimer)
-  {
+  else if (convar == cvar_rtimer) {
     g_rtimer = StringToInt(newValue);
   }
-  else if (convar == cvar_rmenu)
-  {
-    g_rmenu = bool:StringToInt(newValue);
+  else if (convar == cvar_rmenu) {
+    g_rmenu = view_as<bool>(StringToInt(newValue));
+  }
+  else if (convar == cvar_anti_flood_timer) {
+    g_antiflood = view_as<bool>(StringToInt(newValue));
   }
 }
 
-public OnPluginEnd()
+//Process clients when plugin ends (call cleanup for each client)
+public void OnPluginEnd()
 {
-  for(new client = 1; client <= MaxClients; client++)
-  {
-    if(IsClientInGame(client))
-    {
+  for (int client = 1; client <= MaxClients; ++client) {
+    if (IsClientInGame(client)) {
       OnClientDisconnect(client);
     }
   }
 }
 
-public Action:OnClientSayCommand(client, const String:command[], const String:sArgs[])
+//Monitor chat to capture commands
+public Action OnClientSayCommand(int client, const char[] command, const char[] sArgs)
 {
   //Check if command starts with following strings
   if( strncmp(sArgs, "!ws", 3, false) == 0 || 
@@ -299,19 +324,18 @@ public Action:OnClientSayCommand(client, const String:command[], const String:sA
     )
   {
     //Get arguments
-    decl String:idWearSeed[5][14];
-    new returnNum = ExplodeString(sArgs, " ", idWearSeed, sizeof(idWearSeed), sizeof(idWearSeed[]), true);
+    char idWearSeed[5][IDWEARSEED_LENGTH];
+    int returnNum = ExplodeString(sArgs, " ", idWearSeed, sizeof(idWearSeed), sizeof(idWearSeed[]), true);
     
     //Parameters
-    new inputIndex = DEFAULT_ID;
-    new Float:inputWear = DEFAULT_WEAR;
-    new inputSeed = DEFAULT_SEED;
+    int inputIndex = DEFAULT_ID;
+    float inputWear = DEFAULT_WEAR;
+    int inputSeed = DEFAULT_SEED;
     
     //Set parameter values
-    if (returnNum == 0)
-      return Plugin_Handled; //error
-    else if (returnNum == 1) {
-      //do nothing here
+    if (returnNum == 0) {
+      LogError("Failed to explode command string correctly.");
+      return Plugin_Handled; //error occured
     }
     else if (returnNum == 2) {
       inputIndex = StringToInt(idWearSeed[1]);
@@ -325,14 +349,14 @@ public Action:OnClientSayCommand(client, const String:command[], const String:sA
       inputWear = StringToFloat(idWearSeed[2]);
       inputSeed = StringToInt(idWearSeed[3]);
     }
-    else {
+    else if (returnNum == 5) {
       //5 strings retrieved, too many arguments were provided
       CPrintToChat(client, " {green}[WS]{default} %t", "Too Many Args");
       return Plugin_Handled;
     }
     
     //Get VIP status
-    new isVIP = CheckCommandAccess(client, "", ADMFLAG_CUSTOM3);
+    int isVIP = CheckCommandAccess(client, "", FlagToBit(wsFlag));
     
     //Only VIPS can use this plugin unless you are setting the default skin
     if (!isVIP) {
@@ -343,16 +367,25 @@ public Action:OnClientSayCommand(client, const String:command[], const String:sA
     }
     
     // Check input wears
-    if (returnNum >= 3 && inputWear < 0.0 || inputWear > 1.0) { //check for valid wear
-      CPrintToChat(client, " {green}[WS]{default} %t", "Wear Value Wrong");
-      return Plugin_Handled;
+    if (returnNum >= 3) {
+      //Check range
+      if (inputWear < 0.0 || inputWear > 1.0) {
+        CPrintToChat(client, " {green}[WS]{default} %t", "Wear Value Wrong");
+        return Plugin_Handled;
+      }
+      
+      //Limit length of floating point string
+      if (strlen(idWearSeed[2]) > MAX_DIGITS_WEAR) {
+        CPrintToChat(client, " {green}[WS]{default} %t", "Wear Too Long");
+        return Plugin_Handled;
+      }
     }
     
     //Show menu
     if (returnNum == 1) {
       ShowMenu(client, 0);
 
-      if (saytimer != INVALID_HANDLE || g_saytimer == -1)
+      if (saytimer != null || g_saytimer == -1)
         return Plugin_Handled;
 
       saytimer = CreateTimer(1.0 * g_saytimer, Tsaytimer);
@@ -361,7 +394,7 @@ public Action:OnClientSayCommand(client, const String:command[], const String:sA
     }
     else {
       //Call WSkin_Selecter
-      WSkin_Selecter(TYPE_QUICK, INVALID_HANDLE, client, 0, inputIndex, inputWear, inputSeed);
+      WSkin_Selecter(TYPE_QUICK, client, inputIndex, inputWear, inputSeed);
     }
     
     return Plugin_Continue;
@@ -370,7 +403,7 @@ public Action:OnClientSayCommand(client, const String:command[], const String:sA
   {
     ShowSkin(client);
     
-    if (saytimer != INVALID_HANDLE || g_saytimer == -1)
+    if (saytimer != null || g_saytimer == -1)
       return Plugin_Handled;
     
     saytimer = CreateTimer(1.0 * g_saytimer, Tsaytimer);
@@ -381,55 +414,50 @@ public Action:OnClientSayCommand(client, const String:command[], const String:sA
   return Plugin_Continue;
 }
 
-
-CheckDB(bool:reconnect = false, String:yourdb[64] = "wpaints")
+//Checks and begins connection to database
+void CheckDB(bool reconnect = false, char dbName[16] = "wpaints")
 {
-  if(reconnect)
-  {
-    if (db != INVALID_HANDLE)
-    {
+  if (db != null) {
+    if(reconnect) {
       CloseHandle(db);
-      db = INVALID_HANDLE;
+      db = null;
     }
-  }
-  else if (db != INVALID_HANDLE)
-  {
-    return;
+    else
+      return;
   }
 
   //Check if databases.cfg entry exist
-  if (!SQL_CheckConfig( yourdb ))
-  {
+  if (!SQL_CheckConfig( dbName )) {
     LogMessage("wpaints database does not exist.");
     return;
   }
   
-  SQL_TConnect(OnSqlConnect, yourdb);
+  SQL_TConnect(OnDBConnect, dbName);
 }
 
-public OnSqlConnect(Handle:owner, Handle:hndl, const String:error[], any:data)
+public void OnDBConnect(Handle owner, Handle hndl, const char[] error, any data)
 {
-  if (hndl == INVALID_HANDLE)
-  {
+  if (hndl == null) {
     LogToFileEx(g_sCmdLogPath, "Database failure: %s", error);
     SetFailState("Database connection failed.");
   }
-  else
-  {
+  else {
     db = hndl;
-    decl String:buffer[3096];
+    char buffer[3096];
     
     SQL_GetDriverIdent(SQL_ReadDriver(db), buffer, sizeof(buffer));
 
     //Non sqlite databases not supported
-    if (!StrEqual(buffer, "sqlite", false))
+    if (!StrEqual(buffer, "sqlite", false)) {
+      SetFailState("Non sqlite databases are not supported.");
       return;
+    }
   
     //Create temp array with weapon names
-    new String:temp[64][41];
+    char temp[NUM_CSGO_WEAPONS][CSGO_MAX_WEAPON_NAME_LENGTH];
     
-    for (new i = 0; i < GetArraySize(csgo_weapons); ++i) {
-      GetArrayString(csgo_weapons, i, temp[i], 64);
+    for (int i = 0; i < GetArraySize(csgo_weapons); ++i) {
+      GetArrayString(csgo_weapons, i, temp[i], sizeof(temp[]));
     }
   
     //Create SQL Database if it doesn't exist
@@ -440,17 +468,18 @@ public OnSqlConnect(Handle:owner, Handle:hndl, const String:error[], any:data)
   }
 }
 
-public initDBConn_callback(Handle:owner, Handle:hndl, const String:error[], any:data)
+//Initial database callback
+public void initDBConn_callback(Handle owner, Handle hndl, const char[] error, any data)
 {
-  if (hndl == INVALID_HANDLE) {
+  if (hndl == null) {
     LogToFileEx(g_sCmdLogPath, "Query failure: %s", error);
     return;
   }
   
   //Log success
-  LogToFileEx(g_sCmdLogPath, "Database connection successful.");
+  LogToFileEx(g_sCmdLogPath, "Initial database connection successful.");
   
-  for (new client = 1; client <= MaxClients; ++client) {
+  for (int client = 1; client <= MaxClients; ++client) {
     if (IsClientInGame(client)) {
       OnClientPostAdminCheck(client);
     }
@@ -458,16 +487,16 @@ public initDBConn_callback(Handle:owner, Handle:hndl, const String:error[], any:
 }
 
 //Check steamID once client is authorized 
-public OnClientPostAdminCheck(client)
+public void OnClientPostAdminCheck(int client)
 {
   if (!IsFakeClient(client))
     CheckSteamID(client);
 }
 
-
-CheckSteamID(client)
+//Check users steam ID in database
+void CheckSteamID(int client)
 {
-  decl String:query[255], String:steamid[32];
+  char query[100], steamid[32];
   GetClientAuthId(client, AuthId_Steam2,  steamid, sizeof(steamid) );
   
   Format(query, sizeof(query), "SELECT * FROM wpaints WHERE steamid = '%s'", steamid);
@@ -475,16 +504,16 @@ CheckSteamID(client)
   SQL_TQuery(db, CheckSteamID_callback, query, GetClientUserId(client));
 }
  
-public CheckSteamID_callback(Handle:owner, Handle:hndl, const String:error[], any:data)
+public void CheckSteamID_callback(Handle owner, Handle hndl, const char[] error, any data)
 {
-  new client = GetClientOfUserId(data);
+  int client = GetClientOfUserId(data);
  
   // Make sure the client didn't disconnect while the thread was running
   if (client == 0)
     return;
   
   //Check to see if database connection is up
-  if (hndl == INVALID_HANDLE) {
+  if (hndl == null) {
     CheckDB();
     return;
   }
@@ -495,34 +524,34 @@ public CheckSteamID_callback(Handle:owner, Handle:hndl, const String:error[], an
     return;
   }
   
-  //Get entries for this client
+  //Get entries for this returning client
   tree[client] = CreateTrie();
 
-  new String:Classname[64];
-  new String:temp[64];
-  new counter = 1;
+  char Classname[CSGO_MAX_WEAPON_NAME_LENGTH];
+  char temp[CSGO_MAX_WEAPON_NAME_LENGTH];
   
-  for (new i = 0; i < GetArraySize(csgo_weapons); ++i)
-  {
-    GetArrayString(csgo_weapons, i, Classname, 64);
-    SQL_FetchString(hndl, counter, temp, 64);
+  int counter = 1; //initial offset so we skip non weapon rows at top of database
+  
+  for (int i = 0; i < GetArraySize(csgo_weapons); ++i) {
+    GetArrayString(csgo_weapons, i, Classname, sizeof(Classname));
+    SQL_FetchString(hndl, counter, temp, sizeof(temp));
     
     //temp is in format:  id;wear;seed  , break it apart
     //After this idWearSeed[0] contains id, idWearSeed[1] contains wear level, idWearSeed[2] contains seed
-    decl String:idWearSeed[3][14];
+    char idWearSeed[3][IDWEARSEED_LENGTH];
     ExplodeString(temp, ";", idWearSeed, sizeof(idWearSeed), sizeof(idWearSeed[]));
     
     //Set ID value in tree
     SetTrieValue(tree[client], Classname, StringToInt(idWearSeed[0]));
     
     //Set wear value in tree
-    decl String:Classname_wearname[64];
+    char Classname_wearname[CSGO_MAX_WEAPON_NAME_LENGTH + 5];
     Format(Classname_wearname, sizeof(Classname_wearname), "%s%s", Classname, "_wear");
     
     SetTrieValue(tree[client], Classname_wearname, StringToFloat(idWearSeed[1]));
     
     //Set seed value in tree
-    decl String:Classname_seed[64];
+    char Classname_seed[CSGO_MAX_WEAPON_NAME_LENGTH + 5];
     Format(Classname_seed, sizeof(Classname_seed), "%s%s", Classname, "_seed");
     
     SetTrieValue(tree[client], Classname_seed, StringToInt(idWearSeed[2]));
@@ -534,48 +563,49 @@ public CheckSteamID_callback(Handle:owner, Handle:hndl, const String:error[], an
 }
 
 //Adds a new client to the database
-AddNewClientDB(client)
+void AddNewClientDB(int client)
 {
   //Get SteamID
-  decl String:query[255], String:steamid[32];
+  char query[100], steamid[32];
   GetClientAuthId(client, AuthId_Steam2,  steamid, sizeof(steamid) );
-  new userid = GetClientUserId(client);
+  int userid = GetClientUserId(client);
   
   Format(query, sizeof(query), "INSERT INTO wpaints(steamid) VALUES('%s');", steamid);
   LogToFileEx(g_sCmdLogPath, "Query %s", query);
   SQL_TQuery(db, AddNewClientDB_callback, query, userid);
 }
 
-public AddNewClientDB_callback(Handle:owner, Handle:hndl, const String:error[], any:data)
+//AddNewClientDB callback
+public void AddNewClientDB_callback(Handle owner, Handle hndl, const char[] error, any data)
 {
-  if (hndl == INVALID_HANDLE) {
+  if (hndl == null) {
     LogToFileEx(g_sCmdLogPath, "Query failure: %s", error);
     CheckDB();
   }
   
-  new client = GetClientOfUserId(data);
+  int client = GetClientOfUserId(data);
  
   // Make sure the client didn't disconnect while the thread was running 
   if (client == 0)
     return;
   
+ 
   tree[client] = CreateTrie();
-
-  new String:Classname[64];
+  char Classname[CSGO_MAX_WEAPON_NAME_LENGTH];
   
-  for (new i = 0; i < GetArraySize(csgo_weapons); ++i) {
+  for (int i = 0; i < GetArraySize(csgo_weapons); ++i) {
     //Set ID value in tree
-    GetArrayString(csgo_weapons, i, Classname, 64);
+    GetArrayString(csgo_weapons, i, Classname, sizeof(Classname));
     SetTrieValue(tree[client], Classname, DEFAULT_ID);
     
     //Set wear value in tree
-    decl String:Classname_wearname[64];
+    char Classname_wearname[CSGO_MAX_WEAPON_NAME_LENGTH + 5];
     Format(Classname_wearname, sizeof(Classname_wearname), "%s%s", Classname, "_wear");
     
     SetTrieValue(tree[client], Classname_wearname, DEFAULT_WEAR);
     
     //Set seed value in tree
-    decl String:Classname_seed[64];
+    char Classname_seed[CSGO_MAX_WEAPON_NAME_LENGTH + 5];
     Format(Classname_seed, sizeof(Classname_seed), "%s%s", Classname, "_seed");
     
     SetTrieValue(tree[client], Classname_seed, DEFAULT_SEED);
@@ -585,13 +615,14 @@ public AddNewClientDB_callback(Handle:owner, Handle:hndl, const String:error[], 
   isChecked[client] = true;
 }
 
-public DBGeneral_callback(Handle:owner, Handle:hndl, const String:error[], any:data)
+//General database callback, check for any errors
+public void DBGeneral_callback(Handle owner, Handle hndl, const char[] error, any data)
 {
-  if (hndl == INVALID_HANDLE) {
+  if (hndl == null) {
     LogToFileEx(g_sCmdLogPath, "Query failure: %s", error);
   }
   
-  new client = GetClientOfUserId(data);
+  int client = GetClientOfUserId(data);
  
   // Make sure the client didn't disconnect while the thread was running
   if (client == 0)
@@ -602,55 +633,57 @@ public DBGeneral_callback(Handle:owner, Handle:hndl, const String:error[], any:d
 
 
 //Clean up when client disconnects
-public OnClientDisconnect(client)
+public void OnClientDisconnect(int client)
 { 
   isChecked[client] = false;
 
-  if(tree[client] != INVALID_HANDLE)
-  {
+  if(tree[client] != null) {
     ClearTrie(tree[client]);
     CloseHandle(tree[client]);
-    tree[client] = INVALID_HANDLE;
+    tree[client] = null;
   }
 }
 
-public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
+public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max)
 {
   MarkNativeAsOptional("IsClientInLastRequest");
   return APLRes_Success;
 }
 
-public OnLibraryAdded(const String:name[])
+//Detect hosties - add
+public void OnLibraryAdded(const char[] name)
 {
-  if (StrEqual(name, "hosties"))
-  {
+  if (StrEqual(name, "hosties")) {
     g_hosties = true;
   }
 }
 
-public OnLibraryRemoved(const String:name[])
+//Detect hosties - remove
+public void OnLibraryRemoved(const char[] name)
 {
-  if (StrEqual(name, "hosties"))
-  {
+  if (StrEqual(name, "hosties")) {
     g_hosties = false;
   }
 }
 
-public Action:ReloadSkins(client, args)
+//Reload skins from config
+public Action ReloadSkins(int client, int args)
 {  
   ReadPaints();
   ReplyToCommand(client, " \x04[WS]\x01 %T","Weapon skins plugin reloaded", client);
-  
   return Plugin_Handled;
 }
 
-ShowMenu(client, item)
+//Show weaponskins menu
+void ShowMenu(int client, int item)
 {
   SetMenuTitle(menuw, "%T", "Menu title", client);
   
   RemoveMenuItem(menuw, 1);
   RemoveMenuItem(menuw, 0);
-  decl String:tdisplay[64];
+  
+  char tdisplay[64];
+  
   Format(tdisplay, sizeof(tdisplay), "%T", "Random paint", client);
   InsertMenuItem(menuw, 0, "-1", tdisplay);
   Format(tdisplay, sizeof(tdisplay), "%T", "Default paint", client);
@@ -660,213 +693,227 @@ ShowMenu(client, item)
 }
 
 
-ShowSkin(client)
+//Tell user what their current skin is
+void ShowSkin(int client)
 {
-  new weapon = GetEntPropEnt(client, Prop_Send, "m_hActiveWeapon");
-  if(weapon < 1 || !IsValidEdict(weapon) || !IsValidEntity(weapon))
-  {
+  //Ensure  client is alive, and not root
+  if (client == 0) {
+    PrintToConsole(client, "Can't use this command from server input.");
+    return;
+  }
+  else if (!IsClientInGame(client) || !IsPlayerAlive(client)) {
+    CPrintToChat(client, " {green}[WS]{default} %T", "You cant use this when you are dead", client);
+    return;
+  }
+    
+  int weapon = GetEntPropEnt(client, Prop_Send, "m_hActiveWeapon");
+  
+  //Ensure entity is okay
+  if (weapon < 1 || !IsValidEdict(weapon) || !IsValidEntity(weapon)) {
     CPrintToChat(client, " {green}[WS]{default} %T", "Paint not found", client);
     return;
   }
   
-  new search = GetEntProp(weapon,Prop_Send,"m_nFallbackPaintKit");
-  for(new i=1; i<g_paintCount;i++)
-  {
-    if(search == g_paints[i][index])
-    {
+  //Find paintkit used
+  int search = GetEntProp(weapon, Prop_Send, "m_nFallbackPaintKit");
+  
+  for (int i = 1; i < g_paintCount; ++i) {
+    if (search == g_paints[i][index]) {
       CPrintToChat(client, " {green}[WS]{default} %T", "Paint found", client, g_paints[i][listName]);
       return;
     }
   }
   
+  //Print not found message if we failed to find paint
   CPrintToChat(client, " {green}[WS]{default} %T", "Paint not found", client);
 }
 
-public Action:Tsaytimer(Handle:timer)
+public Action Tsaytimer(Handle timer)
 {
-  saytimer = INVALID_HANDLE;
+  saytimer = null;
 }
 
-public Action:roundStart(Handle:event, const String:name[], bool:dontBroadcast) 
+public Action roundStart(Handle event, const char[] name, bool dontBroadcast) 
 {
-  if(g_rtimer == -1) return;
+  if (g_rtimer == -1)
+    return;
   
-  if(rtimer != INVALID_HANDLE)
-  {
+  if (rtimer != null) {
     KillTimer(rtimer);
-    rtimer = INVALID_HANDLE;
+    rtimer = null;
   }
   
-  rtimer = CreateTimer(1.0*g_rtimer, Rtimer);
+  rtimer = CreateTimer(1.0 * g_rtimer, Rtimer);
 }
 
-public Action:Rtimer(Handle:timer)
+public Action Rtimer(Handle timer)
 {
-  rtimer = INVALID_HANDLE;
+  rtimer = null;
 }
 
-
-public DIDMenuHandler(Handle:menu, MenuAction:action, client, itemNum) 
+public int DIDMenuHandler(Menu menu, MenuAction action, int client, int itemNum) 
 {
-  if ( action == MenuAction_Select ) 
-  {
-    WSkin_Selecter(TYPE_MENU, menu, client, itemNum, 0, INVALID_WEAR, DEFAULT_SEED);
+  if (action == MenuAction_Select) {
+    //Itemnum starts at 0 so we have to subtract 1 so it matches the menu options
+    WSkin_Selecter(TYPE_MENU, client, itemNum - 1, DEFAULT_WEAR, DEFAULT_SEED);
   }
 }
 
-
-WSkin_Selecter(type, Handle:menu, client, itemNum, quickNumber, Float:inputWear, inputSeed) 
+void WSkin_Selecter(int type, int client, int inputID, float inputWear, int inputSeed) 
 {
   //Ensure client has been checked
   if (!isChecked[client])
     return;
   
-  if(rtimer == INVALID_HANDLE && g_rtimer != -1)
-  {
-    CPrintToChat(client, " {green}[WS]{default} %T", "You can use this command only the first seconds", client, g_rtimer);
-    if(type == TYPE_MENU && g_rmenu) ShowMenu(client, GetMenuSelectionPosition());
-    return;
-  }
-  if(!IsPlayerAlive(client))
-  {
-    CPrintToChat(client, " {green}[WS]{default} %t", "You cant use this when you are dead");
-    if(type == TYPE_MENU && g_rmenu) ShowMenu(client, GetMenuSelectionPosition());
-    return;
-  }
-  if(g_hosties && IsClientInLastRequest(client))
-  {
-    CPrintToChat(client, " {green}[WS]{default} %t", "You cant use this when you are in a lastrequest");
-    if(type == TYPE_MENU && g_rmenu) ShowMenu(client, GetMenuSelectionPosition());
-    return;
-  }
-
-  new theindex = -1;
-  
-  if (type == TYPE_MENU) {
-    decl String:info[4];
-    
-    GetMenuItem(menu, itemNum, info, sizeof(info));
-    theindex = StringToInt(info);
-  }
-  else if (type == TYPE_QUICK) {
-    theindex = quickNumber;
-    
-    //Ensure we don't request paint outside of range
-    if (theindex < -1 || theindex >= g_paintCount)
-    {
-      CPrintToChat(client, " {green}[WS]{default} %t", "Index out of Range", g_paintCount - 1);
+  //Antiflood checks
+  if (g_antiflood) {
+    if (!g_canUseWS[client]) {
+      //Using ws too quickly
+      CPrintToChat(client, " {green}[WS]{default} %t", "Anti Flood Message");
+      LogAction(client, -1, "\"%L\" is using !ws too quickly. Possible flood attempt.", client);
+      if (type == TYPE_MENU && g_rmenu) ShowMenu(client, GetMenuSelectionPosition()); //keep menu up if using menu
       return;
     }
   }
+  
+  //rtimer checks
+  if (rtimer == null && g_rtimer != -1) {
+    CPrintToChat(client, " {green}[WS]{default} %T", "You can use this command only the first seconds", client, g_rtimer);
+    if (type == TYPE_MENU && g_rmenu) ShowMenu(client, GetMenuSelectionPosition());
+    return;
+  }
+  
+  //Ensure player is still in game
+  if(!IsClientInGame(client))
+    return;
+  
+  //Ensure player is alive
+  if(!IsPlayerAlive(client)) {
+    CPrintToChat(client, " {green}[WS]{default} %t", "You cant use this when you are dead");
+    if (type == TYPE_MENU && g_rmenu) ShowMenu(client, GetMenuSelectionPosition());
+    return;
+  }
+  
+  //Hosties
+  if(g_hosties && IsClientInLastRequest(client)) {
+    CPrintToChat(client, " {green}[WS]{default} %t", "You cant use this when you are in a lastrequest");
+    if (type == TYPE_MENU && g_rmenu) ShowMenu(client, GetMenuSelectionPosition());
+    return;
+  }
 
-  new windex = GetEntPropEnt(client, Prop_Send, "m_hActiveWeapon");
-  if(windex < 1)
-  {
+  //Ensure we don't request paint outside of range
+  if (inputID < -1 || inputID >= g_paintCount) {
+    CPrintToChat(client, " {green}[WS]{default} %t", "Index out of Range", g_paintCount - 1);
+    return;
+  }
+
+  int windex = GetEntPropEnt(client, Prop_Send, "m_hActiveWeapon");
+
+  //Ensure weapon entity is okay
+  if (windex < 1 || !IsValidEdict(windex) || !IsValidEntity(windex)) {
     CPrintToChat(client, " {green}[WS]{default} %t", "You cant use a paint in this weapon");
-    if(type == TYPE_MENU && g_rmenu) ShowMenu(client, GetMenuSelectionPosition());
+    if (type == TYPE_MENU && g_rmenu) ShowMenu(client, GetMenuSelectionPosition());
     return;
   }
   
-  decl String:Classname[64];
-  GetEdictClassname(windex, Classname, 64);
+  //Get active weapon classname
+  char Classname[CSGO_MAX_WEAPON_NAME_LENGTH];
+  GetEdictClassname(windex, Classname, sizeof(Classname));
   
-  if(StrEqual(Classname, "weapon_taser"))
-  {
+  //Taser is not skinable
+  if(StrEqual(Classname, "weapon_taser")) {
     CPrintToChat(client, " {green}[WS]{default} %t", "You cant use a paint in this weapon");
-    if(type == TYPE_MENU && g_rmenu) ShowMenu(client, GetMenuSelectionPosition());
-    return;
-  }
-  new weaponindex = GetEntProp(windex, Prop_Send, "m_iItemDefinitionIndex");
-  if(weaponindex == 42 || weaponindex == 59)
-  {
-    CPrintToChat(client, " {green}[WS]{default} %t", "You cant use a paint in this weapon");
-    if(type == TYPE_MENU && g_rmenu) ShowMenu(client, GetMenuSelectionPosition());
+    if (type == TYPE_MENU && g_rmenu) ShowMenu(client, GetMenuSelectionPosition());
     return;
   }
   
-  if(GetPlayerWeaponSlot(client, CS_SLOT_PRIMARY) == windex || GetPlayerWeaponSlot(client, CS_SLOT_SECONDARY) == windex || GetPlayerWeaponSlot(client, CS_SLOT_KNIFE) == windex || (g_c4 && GetPlayerWeaponSlot(client, CS_SLOT_C4) == windex))
+  int weaponindex = GetEntProp(windex, Prop_Send, "m_iItemDefinitionIndex");
+  
+  if (weaponindex == 42 || weaponindex == 59) {
+    CPrintToChat(client, " {green}[WS]{default} %t", "You cant use a paint in this weapon");
+    if (type == TYPE_MENU && g_rmenu) ShowMenu(client, GetMenuSelectionPosition());
+    return;
+  }
+  
+  if (GetPlayerWeaponSlot(client, CS_SLOT_PRIMARY) == windex || GetPlayerWeaponSlot(client, CS_SLOT_SECONDARY) == windex || GetPlayerWeaponSlot(client, CS_SLOT_KNIFE) == windex || (g_c4 && GetPlayerWeaponSlot(client, CS_SLOT_C4) == windex))
   {
-    switch (weaponindex)
-    {
-      case 60: strcopy(Classname, 64, "weapon_m4a1_silencer");
-      case 61: strcopy(Classname, 64, "weapon_usp_silencer");
-      case 63: strcopy(Classname, 64, "weapon_cz75a");
-      case 500: strcopy(Classname, 64, "weapon_bayonet");
-      case 506: strcopy(Classname, 64, "weapon_knife_gut");
-      case 505: strcopy(Classname, 64, "weapon_knife_flip");
-      case 508: strcopy(Classname, 64, "weapon_knife_m9_bayonet");
-      case 507: strcopy(Classname, 64, "weapon_knife_karambit");
-      case 509: strcopy(Classname, 64, "weapon_knife_tactical");
-      case 512: strcopy(Classname, 64, "weapon_knife_falchion");
-      case 515: strcopy(Classname, 64, "weapon_knife_butterfly");
-      case 516: strcopy(Classname, 64, "weapon_knife_push");
+    switch (weaponindex) {
+      case 60: strcopy(Classname, sizeof(Classname), "weapon_m4a1_silencer");
+      case 61: strcopy(Classname, sizeof(Classname), "weapon_usp_silencer");
+      case 63: strcopy(Classname, sizeof(Classname), "weapon_cz75a");
+      case 500: strcopy(Classname, sizeof(Classname), "weapon_bayonet");
+      case 506: strcopy(Classname, sizeof(Classname), "weapon_knife_gut");
+      case 505: strcopy(Classname, sizeof(Classname), "weapon_knife_flip");
+      case 508: strcopy(Classname, sizeof(Classname), "weapon_knife_m9_bayonet");
+      case 507: strcopy(Classname, sizeof(Classname), "weapon_knife_karambit");
+      case 509: strcopy(Classname, sizeof(Classname), "weapon_knife_tactical");
+      case 512: strcopy(Classname, sizeof(Classname), "weapon_knife_falchion");
+      case 515: strcopy(Classname, sizeof(Classname), "weapon_knife_butterfly");
+      case 516: strcopy(Classname, sizeof(Classname), "weapon_knife_push");
     }
     
-    //Save index in trie for client
-    SetTrieValue(tree[client], Classname, theindex);
+    //Save indexID in trie for client
+    SetTrieValue(tree[client], Classname, inputID);
     
     //Save wear
-    decl String:Classname_wearname[64];
+    char Classname_wearname[CSGO_MAX_WEAPON_NAME_LENGTH + 5];
     Format(Classname_wearname, sizeof(Classname_wearname), "%s%s", Classname, "_wear");
     SetTrieValue(tree[client], Classname_wearname, inputWear);
     
     //Save seed
-    decl String:Classname_seed[64];
+    char Classname_seed[CSGO_MAX_WEAPON_NAME_LENGTH + 5];
     Format(Classname_seed, sizeof(Classname_seed), "%s%s", Classname, "_seed");
     SetTrieValue(tree[client], Classname_seed, inputSeed);
     
     //Call paint change plugin with these parameters
-    ChangePaint(client, windex, Classname, weaponindex, inputWear, inputSeed);
+    ChangePaint(client, windex, Classname, weaponindex, inputID, inputWear, inputSeed);
     FakeClientCommand(client, "use %s", Classname);
     
-    if (theindex == 0)
+    //Print weapon skin changed message based on type of change
+    if (inputID == 0)
       CPrintToChat(client, " {green}[WS]{default} %t","You have choose your default paint for your", Classname);
-    else if (theindex == -1)
+    else if (inputID == -1)
       CPrintToChat(client, " {green}[WS]{default} %t","You have choose a random paint for your", Classname);
     else
-      CPrintToChat(client, " {green}[WS]{default} %t", "You have choose a weapon", g_paints[theindex][listName], Classname);
+      CPrintToChat(client, " {green}[WS]{default} %t", "You have choose a weapon", g_paints[inputID][listName], Classname);
+    
+    //Set anti flood timer
+    if (g_antiflood) {
+      g_canUseWS[client] = false;
+      CreateTimer(WS_ANTI_FLOOD_TIME, Timer_ReEnable_WS, client);
+    }
+    
   }
   else 
     CPrintToChat(client, " {green}[WS]{default} %t", "You cant use a paint in this weapon");
   
-  if(type == TYPE_MENU && g_rmenu) ShowMenu(client, GetMenuSelectionPosition());
+  if (type == TYPE_MENU && g_rmenu) ShowMenu(client, GetMenuSelectionPosition());
 }
 
-public Action:RestoreItemID(Handle:timer, Handle:pack)
+//Re-enable ws for particular client
+public Action Timer_ReEnable_WS(Handle timer, int client)
 {
-    new entity;
-    new m_iItemIDHigh;
-    new m_iItemIDLow;
-    
-    ResetPack(pack);
-    entity = EntRefToEntIndex(ReadPackCell(pack));
-    m_iItemIDHigh = ReadPackCell(pack);
-    m_iItemIDLow = ReadPackCell(pack);
-    
-    if(entity != INVALID_ENT_REFERENCE)
-  {
-    SetEntProp(entity,Prop_Send,"m_iItemIDHigh",m_iItemIDHigh);
-    SetEntProp(entity,Prop_Send,"m_iItemIDLow",m_iItemIDLow);
-  }
+  g_canUseWS[client] = true;
 }
 
-ReadPaints()
+//Read paint (skin codes/quality/wear etc) information from config file
+void ReadPaints()
 {
   BuildPath(Path_SM, path_paints, sizeof(path_paints), "configs/csgo_wpaints.cfg");
   
-  decl Handle:kv;
+  Handle kv;
   g_paintCount = 1;
 
   kv = CreateKeyValues("Paints");
   FileToKeyValues(kv, path_paints);
 
   if (!KvGotoFirstSubKey(kv)) {
-
     SetFailState("CFG File not found: %s", path_paints);
     CloseHandle(kv);
   }
+  
   do {
-    KvGetSectionName(kv, g_paints[g_paintCount][listName], 64);
+    KvGetSectionName(kv, g_paints[g_paintCount][listName], 64); //size hardcoded here due to olddecl enums
     g_paints[g_paintCount][index] = KvGetNum(kv, "paint", 0);
     g_paints[g_paintCount][wear] = KvGetFloat(kv, "wear", -1.0);
     g_paints[g_paintCount][stattrak] = KvGetNum(kv, "stattrak", -2);
@@ -876,212 +923,246 @@ ReadPaints()
   } while (KvGotoNextKey(kv));
   CloseHandle(kv);
   
-  if(menuw != INVALID_HANDLE) CloseHandle(menuw);
-  menuw = INVALID_HANDLE;
+  //Create (or update) the menu
+  if (menuw != null) {
+    CloseHandle(menuw);
+    menuw = null;
+  }
   
   menuw = CreateMenu(DIDMenuHandler);
   
-  decl String:item[4];
   AddMenuItem(menuw, "-1", "Random paint");
   AddMenuItem(menuw, "0", "Default paint");
   
-  for (new i=1; i < g_paintCount; ++i) {
-    Format(item, 4, "%i", i);
+  char item[4];
+    
+  for (int i = 1; i < g_paintCount; ++i) {
+    Format(item, sizeof(item), "%i", i);
     AddMenuItem(menuw, item, g_paints[i][listName]);
   }
   
   SetMenuExitButton(menuw, true);
 }
 
-stock GetReserveAmmo(client, weapon)
+stock int GetReserveAmmo(int client, int weapon)
 {
-    new ammotype = GetEntProp(weapon, Prop_Send, "m_iPrimaryAmmoType");
-    if(ammotype == -1) return -1;
-    
-    return GetEntProp(client, Prop_Send, "m_iAmmo", _, ammotype);
+  int ammotype = GetEntProp(weapon, Prop_Send, "m_iPrimaryAmmoType");
+  if (ammotype == -1) return -1;
+  
+  return GetEntProp(client, Prop_Send, "m_iAmmo", _, ammotype);
 }
 
-stock SetReserveAmmo(client, weapon, weaponEntity, ammo, primaryReserve)
+stock void SetReserveAmmo(int client, int weapon, int weaponEntity, int ammo, int primaryReserve)
 {
-  new ammotype = GetEntProp(weapon, Prop_Send, "m_iPrimaryAmmoType");
-  if(ammotype == -1) return;
+  int ammotype = GetEntProp(weapon, Prop_Send, "m_iPrimaryAmmoType");
+  if (ammotype == -1) return;
   
   SetEntProp(weaponEntity, Prop_Send, "m_iPrimaryReserveAmmoCount", primaryReserve); 
   SetEntProp(client, Prop_Send, "m_iAmmo", ammo, _, ammotype);
 } 
 
-ChangePaint(client, windex, String:Classname[64], weaponindex, Float:inputWear, inputSeed)
+//Function that perfoms actual paint change for weapon entity
+void ChangePaint(int client, int windex, char[] Classname, int weaponindex, int inputID, float inputWear, int inputSeed)
 {
-  new bool:knife = false;
-  if(StrContains(Classname, "weapon_knife", false) == 0 || StrContains(Classname, "weapon_bayonet", false) == 0) 
-  {
-    knife = true;
-  }
+  //Detect knives
+  bool knife = false;
   
-  new ammo, clip, primaryReserve;
-  if(!knife)
-  {
+  if (StrContains(Classname, "weapon_knife", false) == 0 || StrContains(Classname, "weapon_bayonet", false) == 0)
+    knife = true;
+  
+  int ammo, clip, primaryReserve;
+  
+  if (!knife) {
     ammo = GetReserveAmmo(client, windex);
     clip = GetEntProp(windex, Prop_Send, "m_iClip1");
     primaryReserve = GetEntProp(windex, Prop_Send, "m_iPrimaryReserveAmmoCount");
   }
+  
   RemovePlayerItem(client, windex);
   AcceptEntityInput(windex, "Kill");
   
-  new Handle:pack;
-  new entity = GivePlayerItem(client, Classname);
+  int entity = GivePlayerItem(client, Classname);
   
-  if(knife)
-  {
+  if(knife) {
+    //Equip knife
     if (weaponindex != 42 && weaponindex != 59) 
       EquipPlayerWeapon(client, entity);
   }
-  else
-  {
+  else {
+    //Set ammo to correct ammount
     SetReserveAmmo(client, windex, entity, ammo, primaryReserve);
     SetEntProp(entity, Prop_Send, "m_iClip1", clip);
   }
   
-  new theindex;
-  GetTrieValue(tree[client], Classname, theindex);  //Get the skin id
-  if(theindex == 0) return;
+  //Check inputID
+  if (inputID == 0)
+    return;
 
-  if(theindex == -1)  //randomised index
-    theindex = GetRandomInt(1, g_paintCount-1);
+  if(inputID == -1)  //randomised index
+    inputID = GetRandomInt(1, g_paintCount-1);
   
-  new m_iItemIDHigh = GetEntProp(entity, Prop_Send, "m_iItemIDHigh");
-  new m_iItemIDLow = GetEntProp(entity, Prop_Send, "m_iItemIDLow");
+  //Preserve m_iItemIDHigh and m_iItemIDLow
+  int m_iItemIDHigh = GetEntProp(entity, Prop_Send, "m_iItemIDHigh");
+  int m_iItemIDLow = GetEntProp(entity, Prop_Send, "m_iItemIDLow");
 
-  SetEntProp(entity,Prop_Send,"m_iItemIDLow",2048);
-  SetEntProp(entity,Prop_Send,"m_iItemIDHigh",0);
+  SetEntProp(entity,Prop_Send,"m_iItemIDLow", 2048);
+  SetEntProp(entity,Prop_Send,"m_iItemIDHigh", 0);
 
-  //Skin
-  SetEntProp(entity,Prop_Send,"m_nFallbackPaintKit",g_paints[theindex][index]); //set paint texture
+  //Set skin
+  SetEntProp(entity,Prop_Send, "m_nFallbackPaintKit", g_paints[inputID][index]);
   
   //Get suitable value for inputWear
   if (inputWear == INVALID_WEAR) {
-    if (g_paints[theindex][wear] >= 0.0)
-      inputWear = g_paints[theindex][wear];
+    if (g_paints[inputID][wear] >= 0.0)
+      inputWear = g_paints[inputID][wear];
     else
-      inputWear = 0.0; //default
+      inputWear = 0.00998; //high quality FN
   }
   
   //Set wear
-  SetEntPropFloat(entity,Prop_Send, "m_flFallbackWear", inputWear);
+  SetEntPropFloat(entity, Prop_Send, "m_flFallbackWear", inputWear);
   
-  //Seed
+  //Set seed
   SetEntProp(entity, Prop_Send, "m_nFallbackSeed", inputSeed);
   
   //Stattrak
-  if(g_paints[theindex][stattrak] != -2) SetEntProp(entity,Prop_Send,"m_nFallbackStatTrak",g_paints[theindex][stattrak]);
+  if(g_paints[inputID][stattrak] != -2)
+    SetEntProp(entity,Prop_Send,"m_nFallbackStatTrak",g_paints[inputID][stattrak]);
   
   //Quality
-  if(g_paints[theindex][quality] != -2) SetEntProp(entity,Prop_Send,"m_iEntityQuality",g_paints[theindex][quality]);
+  if(g_paints[inputID][quality] != -2)
+    SetEntProp(entity,Prop_Send,"m_iEntityQuality",g_paints[inputID][quality]);
   
-  //If knife, auto add star
+  //Auto star knives
   if (knife)
     SetEntProp(entity, Prop_Send, "m_iEntityQuality", 3); //3 is for the star
   
-  //Write changes to datebase (via UPDATE query)
-  decl String:steamid[32];
+  //Save changes to datebase (via UPDATE query)
+  char steamid[32];
   GetClientAuthId(client, AuthId_Steam2,  steamid, sizeof(steamid) );
   
-  decl String:buffer[1024];
-  Format(buffer, sizeof(buffer), "UPDATE wpaints SET %s = '%d;%f;%d' WHERE steamid = '%s';", Classname, theindex, inputWear, inputSeed, steamid); 
+  char buffer[200];
+  Format(buffer, sizeof(buffer), "UPDATE wpaints SET %s = '%d;%f;%d' WHERE steamid = '%s';", Classname, inputID, inputWear, inputSeed, steamid); 
   LogToFileEx(g_sCmdLogPath, "Query %s", buffer);
   SQL_TQuery(db, DBGeneral_callback, buffer, GetClientUserId(client));
   
+  //Restore the previous itemID
+  Handle pack;
   CreateDataTimer(0.2, RestoreItemID, pack);
   WritePackCell(pack, EntIndexToEntRef(entity));
   WritePackCell(pack, m_iItemIDHigh);
   WritePackCell(pack, m_iItemIDLow);
 }
 
-public OnClientPutInServer(client)
+//Restore itemID's
+public Action RestoreItemID(Handle timer, Handle pack)
 {
-  if(!IsFakeClient(client))
-    SDKHook(client, SDKHook_WeaponEquipPost, OnPostWeaponEquip);
+  int entity;
+  int m_iItemIDHigh;
+  int m_iItemIDLow;
+  
+  ResetPack(pack);
+  entity = EntRefToEntIndex(ReadPackCell(pack));
+  m_iItemIDHigh = ReadPackCell(pack);
+  m_iItemIDLow = ReadPackCell(pack);
+  
+  if (entity != INVALID_ENT_REFERENCE) {
+    SetEntProp(entity, Prop_Send, "m_iItemIDHigh" ,m_iItemIDHigh);
+    SetEntProp(entity, Prop_Send, "m_iItemIDLow", m_iItemIDLow);
+  }
 }
 
-public Action:OnPostWeaponEquip(client, weapon)
+//SDKhook when clients connect to server
+public void OnClientPutInServer(int client)
 {
-  new Handle:pack;
-  CreateDataTimer(0.0, Last, pack);
-  WritePackCell(pack,EntIndexToEntRef(weapon));
+  if (!IsFakeClient(client))
+    SDKHook(client, SDKHook_WeaponEquipPost, OnPostWeaponEquip);
+  
+  if (g_antiflood) g_canUseWS[client] = true; //anti-flood
+}
+
+//Skin weapons that we pick up
+public Action OnPostWeaponEquip(int client, int weapon)
+{
+  Handle pack;
+  CreateDataTimer(0.0, WeaponPickUpSkin, pack);
+  WritePackCell(pack, EntIndexToEntRef(weapon));
   WritePackCell(pack, client);
 }
 
-public Action:Last(Handle:timer, Handle:pack)
+//Apply skin to weapon that was equiped
+public Action WeaponPickUpSkin(Handle timer, Handle pack)
 {
-  new weapon;
-  new client
+  int weapon;
+  int client
     
   ResetPack(pack);
   weapon = EntRefToEntIndex(ReadPackCell(pack));
   client = ReadPackCell(pack);
-    
-  if (weapon == INVALID_ENT_REFERENCE || !IsClientInGame(client) || !IsPlayerAlive(client) || (g_hosties && IsClientInLastRequest(client))) {
-   return; 
-  }
   
-  if(weapon < 1 || !IsValidEdict(weapon) || !IsValidEntity(weapon)) {
-    return;
-  }
+  //Check client
+  if (!IsClientInGame(client) || !IsPlayerAlive(client) || (g_hosties && IsClientInLastRequest(client)))
+    return; 
   
-  if ( GetEntProp(weapon, Prop_Send, "m_hPrevOwner") > 0 || (GetEntProp(weapon, Prop_Send, "m_iItemIDHigh") == 0 && GetEntProp(weapon, Prop_Send, "m_iItemIDLow") == 2048)) {
+  //Check weapon
+  if(weapon == INVALID_ENT_REFERENCE || weapon < 1 || !IsValidEdict(weapon) || !IsValidEntity(weapon))
     return;
-  }
+  
+  //Check previous owner and item id's
+  if ( GetEntProp(weapon, Prop_Send, "m_hPrevOwner") > 0 || (GetEntProp(weapon, Prop_Send, "m_iItemIDHigh") == 0 && GetEntProp(weapon, Prop_Send, "m_iItemIDLow") == 2048))
+    return;
     
-  decl String:Classname[64];
-  GetEdictClassname(weapon, Classname, 64);
+  char Classname[CSGO_MAX_WEAPON_NAME_LENGTH];
+  GetEdictClassname(weapon, Classname, sizeof(Classname));
+  
+  //Ignore tasers
   if(StrEqual(Classname, "weapon_taser"))
-  {
     return;
-  }
-  new weaponindex = GetEntProp(weapon, Prop_Send, "m_iItemDefinitionIndex");
+  
+  int weaponindex = GetEntProp(weapon, Prop_Send, "m_iItemDefinitionIndex");
+  
+  //Ignore these weapon indexes
   if(weaponindex == 42 || weaponindex == 59)
-  {
     return;
-  }
-  if(GetPlayerWeaponSlot(client, CS_SLOT_PRIMARY) == weapon || GetPlayerWeaponSlot(client, CS_SLOT_SECONDARY) == weapon || GetPlayerWeaponSlot(client, CS_SLOT_KNIFE) == weapon || (g_c4 && GetPlayerWeaponSlot(client, CS_SLOT_C4) == weapon))
+  
+  if (GetPlayerWeaponSlot(client, CS_SLOT_PRIMARY) == weapon || GetPlayerWeaponSlot(client, CS_SLOT_SECONDARY) == weapon || GetPlayerWeaponSlot(client, CS_SLOT_KNIFE) == weapon || (g_c4 && GetPlayerWeaponSlot(client, CS_SLOT_C4) == weapon))
   {
-    switch (weaponindex)
-    {
-      case 60: strcopy(Classname, 64, "weapon_m4a1_silencer");
-      case 61: strcopy(Classname, 64, "weapon_usp_silencer");
-      case 63: strcopy(Classname, 64, "weapon_cz75a");
-      case 500: strcopy(Classname, 64, "weapon_bayonet");
-      case 506: strcopy(Classname, 64, "weapon_knife_gut");
-      case 505: strcopy(Classname, 64, "weapon_knife_flip");
-      case 508: strcopy(Classname, 64, "weapon_knife_m9_bayonet");
-      case 507: strcopy(Classname, 64, "weapon_knife_karambit");
-      case 509: strcopy(Classname, 64, "weapon_knife_tactical");
-      case 512: strcopy(Classname, 64, "weapon_knife_falchion");
-      case 515: strcopy(Classname, 64, "weapon_knife_butterfly");
-      case 516: strcopy(Classname, 64, "weapon_knife_push");
+    switch (weaponindex) {
+      case 60: strcopy(Classname, sizeof(Classname), "weapon_m4a1_silencer");
+      case 61: strcopy(Classname, sizeof(Classname), "weapon_usp_silencer");
+      case 63: strcopy(Classname, sizeof(Classname), "weapon_cz75a");
+      case 500: strcopy(Classname, sizeof(Classname), "weapon_bayonet");
+      case 506: strcopy(Classname, sizeof(Classname), "weapon_knife_gut");
+      case 505: strcopy(Classname, sizeof(Classname), "weapon_knife_flip");
+      case 508: strcopy(Classname, sizeof(Classname), "weapon_knife_m9_bayonet");
+      case 507: strcopy(Classname, sizeof(Classname), "weapon_knife_karambit");
+      case 509: strcopy(Classname, sizeof(Classname), "weapon_knife_tactical");
+      case 512: strcopy(Classname, sizeof(Classname), "weapon_knife_falchion");
+      case 515: strcopy(Classname, sizeof(Classname), "weapon_knife_butterfly");
+      case 516: strcopy(Classname, sizeof(Classname), "weapon_knife_push");
     }
     
-    new value = 0;  //get the skin id
-    
-    GetTrieValue(tree[client], Classname, value);
-    if(value == 0) //No skin for this gun
+    //Get the skin ID
+    int storedID = 0;
+    GetTrieValue(tree[client], Classname, storedID);
+    if (storedID == 0) //No skin stored for this gun
       return;
     
     //Get stored wear value
-    new Float:storedWear = INVALID_WEAR;
+    float storedWear = DEFAULT_WEAR;
     
-    decl String:Classname_wearname[64];
+    char Classname_wearname[CSGO_MAX_WEAPON_NAME_LENGTH + 5];
     Format(Classname_wearname, sizeof(Classname_wearname), "%s%s", Classname, "_wear");
     GetTrieValue(tree[client], Classname_wearname, storedWear);
     
     //Get stored seed value
-    new storedSeed = DEFAULT_SEED;
+    int storedSeed = DEFAULT_SEED;
     
-    decl String:Classname_seed[64];
+    char Classname_seed[CSGO_MAX_WEAPON_NAME_LENGTH + 5];
     Format(Classname_seed, sizeof(Classname_seed), "%s%s", Classname, "_seed");
     GetTrieValue(tree[client], Classname_seed, storedSeed);
     
     //Change paint to proper skin with proper wear
-    ChangePaint(client, weapon, Classname, weaponindex, storedWear, storedSeed);
+    ChangePaint(client, weapon, Classname, weaponindex, storedID, storedWear, storedSeed);
   }
 }
