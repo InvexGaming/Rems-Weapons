@@ -311,16 +311,23 @@ public void OnPluginEnd()
 }
 
 //Monitor chat to capture commands
-public Action OnClientSayCommand(int client, const char[] command, const char[] sArgs)
+public Action OnClientSayCommand(int client, const char[] command_t, const char[] sArgs)
 {
+  char command[32];
+  SplitString(sArgs, " ", command, sizeof(command));
+  
+  //If no spaces then user is calling command with no function
+  if (strcmp(command, "") == 0)
+    strcopy(command, sizeof(command), sArgs);
+  
   //Check if command starts with following strings
-  if( strncmp(sArgs, "!ws", 3, false) == 0 || 
-      strncmp(sArgs, "!wskin", 6, false) == 0 || 
-      strncmp(sArgs, "!wskins", 7, false) == 0 || 
-      strncmp(sArgs, "!pk", 3, false) == 0 || 
-      strncmp(sArgs, "!paints", 7, false) == 0 || 
-      strncmp(sArgs, "!pkits", 6, false) == 0 || 
-      strncmp(sArgs, "!rvip", 5, false) == 0
+  if( StrEqual(command, "!ws", false) ||
+      StrEqual(command, "!wskin", false) ||
+      StrEqual(command, "!wskins", false) ||
+      StrEqual(command, "!pk", false) ||
+      StrEqual(command, "!paints", false) ||
+      StrEqual(command, "!pkits", false) ||
+      StrEqual(command, "!rvip", false)
     )
   {
     //Get arguments
@@ -399,7 +406,7 @@ public Action OnClientSayCommand(int client, const char[] command, const char[] 
     
     return Plugin_Continue;
   }
-  else if(StrEqual(sArgs, "!ss", false) || StrEqual(sArgs, "!showskin", false))
+  else if(StrEqual(command, "!ss", false) || StrEqual(command, "!showskin", false))
   {
     ShowSkin(client);
     
