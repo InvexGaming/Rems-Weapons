@@ -11,7 +11,7 @@
 #pragma newdecls required
 
 // Plugin Informaiton  
-#define VERSION "2.05"
+#define VERSION "2.06"
 
 public Plugin myinfo =
 {
@@ -35,8 +35,7 @@ public Plugin myinfo =
 #define TYPE_QUICK 1
 
 #define DEFAULT_ID 0
-#define INVALID_WEAR -1.0
-#define DEFAULT_WEAR -1.0
+#define DEFAULT_WEAR 0.00001
 #define DEFAULT_SEED 0
 
 //Listing variable used to store information about each paint entry
@@ -105,7 +104,7 @@ public void OnPluginStart()
 
   //Commands
   RegAdminCmd("sm_reload_vipspecial", ReloadSkins, ADMFLAG_ROOT);
-
+  
   //Convars
   cvar_c4 = CreateConVar("sm_vipspecial_c4", "1", "No description provided (see source). 1 = enabled, 0 = disabled");
   cvar_saytimer = CreateConVar("sm_vipspecial_saytimer", "10", "No description provided (see source). -1.0 = never show the commands in chat");
@@ -468,7 +467,7 @@ public void OnDBConnect(Handle owner, Handle hndl, const char[] error, any data)
     }
   
     //Create SQL Database if it doesn't exist
-    Format(buffer, sizeof(buffer), "CREATE TABLE IF NOT EXISTS wpaints ( steamid varchar(32) NOT NULL, %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', %s varchar(64) NOT NULL DEFAULT '0;-1.0;0', PRIMARY KEY (steamid))", temp[0],temp[1],temp[2],temp[3],temp[4],temp[5],temp[6],temp[7],temp[8],temp[9],temp[10],temp[11],temp[12],temp[13],temp[14],temp[15],temp[16],temp[17],temp[18],temp[19],temp[20],temp[21],temp[22],temp[23],temp[24],temp[25],temp[26],temp[27],temp[28],temp[29],temp[30],temp[31],temp[32],temp[33],temp[34],temp[35],temp[36],temp[37],temp[38],temp[39],temp[40],temp[41],temp[42]);
+    Format(buffer, sizeof(buffer), "CREATE TABLE IF NOT EXISTS wpaints ( steamid varchar(32) NOT NULL, %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', PRIMARY KEY (steamid))", temp[0],temp[1],temp[2],temp[3],temp[4],temp[5],temp[6],temp[7],temp[8],temp[9],temp[10],temp[11],temp[12],temp[13],temp[14],temp[15],temp[16],temp[17],temp[18],temp[19],temp[20],temp[21],temp[22],temp[23],temp[24],temp[25],temp[26],temp[27],temp[28],temp[29],temp[30],temp[31],temp[32],temp[33],temp[34],temp[35],temp[36],temp[37],temp[38],temp[39],temp[40],temp[41],temp[42]);
   
     LogToFileEx(g_sCmdLogPath, "Query %s", buffer);
     SQL_TQuery(db, initDBConn_callback, buffer);
@@ -1002,8 +1001,12 @@ void ChangePaint(int client, int windex, char[] Classname, int weaponindex, int 
   }
   
   //Check inputID
-  if (inputID == 0)
+  //If ID is zero then we don't need to skin this weapon (use default skin)
+  if (inputID == 0) {
+    //Save preferences to DB
+    updateSkinPrefs(client, Classname, DEFAULT_ID, DEFAULT_WEAR, DEFAULT_SEED);
     return;
+  }
 
   if(inputID == -1)  //randomised index
     inputID = GetRandomInt(1, g_paintCount-1);
@@ -1018,14 +1021,6 @@ void ChangePaint(int client, int windex, char[] Classname, int weaponindex, int 
   //Set skin
   SetEntProp(entity,Prop_Send, "m_nFallbackPaintKit", g_paints[inputID][index]);
   
-  //Get suitable value for inputWear
-  if (inputWear == INVALID_WEAR) {
-    if (g_paints[inputID][wear] >= 0.0)
-      inputWear = g_paints[inputID][wear];
-    else
-      inputWear = 0.00998; //high quality FN
-  }
-  
   //Set wear
   SetEntPropFloat(entity, Prop_Send, "m_flFallbackWear", inputWear);
   
@@ -1034,24 +1029,18 @@ void ChangePaint(int client, int windex, char[] Classname, int weaponindex, int 
   
   //Stattrak
   if(g_paints[inputID][stattrak] != -2)
-    SetEntProp(entity,Prop_Send,"m_nFallbackStatTrak",g_paints[inputID][stattrak]);
+    SetEntProp(entity,Prop_Send, "m_nFallbackStatTrak", g_paints[inputID][stattrak]);
   
   //Quality
   if(g_paints[inputID][quality] != -2)
-    SetEntProp(entity,Prop_Send,"m_iEntityQuality",g_paints[inputID][quality]);
+    SetEntProp(entity,Prop_Send, "m_iEntityQuality", g_paints[inputID][quality]);
   
   //Auto star knives
   if (knife)
     SetEntProp(entity, Prop_Send, "m_iEntityQuality", 3); //3 is for the star
   
-  //Save changes to datebase (via UPDATE query)
-  char steamid[32];
-  GetClientAuthId(client, AuthId_Steam2,  steamid, sizeof(steamid) );
-  
-  char buffer[200];
-  Format(buffer, sizeof(buffer), "UPDATE wpaints SET %s = '%d;%f;%d' WHERE steamid = '%s';", Classname, inputID, inputWear, inputSeed, steamid); 
-  LogToFileEx(g_sCmdLogPath, "Query %s", buffer);
-  SQL_TQuery(db, DBGeneral_callback, buffer, GetClientUserId(client));
+  //Save changes to datebase
+  updateSkinPrefs(client, Classname, inputID, inputWear, inputSeed);
   
   //Restore the previous itemID
   Handle pack;
@@ -1059,6 +1048,19 @@ void ChangePaint(int client, int windex, char[] Classname, int weaponindex, int 
   WritePackCell(pack, EntIndexToEntRef(entity));
   WritePackCell(pack, m_iItemIDHigh);
   WritePackCell(pack, m_iItemIDLow);
+}
+
+//Updates database with skin preferences after a skin change
+void updateSkinPrefs(int client, char[] Classname, int inputID, float inputWear, int inputSeed)
+{
+  //Save changes to datebase (via UPDATE query)
+  char steamid[32];
+  GetClientAuthId(client, AuthId_Steam2, steamid, sizeof(steamid));
+  
+  char buffer[200];
+  Format(buffer, sizeof(buffer), "UPDATE wpaints SET %s = '%d;%f;%d' WHERE steamid = '%s';", Classname, inputID, inputWear, inputSeed, steamid); 
+  LogToFileEx(g_sCmdLogPath, "Query %s", buffer);
+  SQL_TQuery(db, DBGeneral_callback, buffer, GetClientUserId(client));
 }
 
 //Restore itemID's
