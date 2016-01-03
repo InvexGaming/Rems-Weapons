@@ -11,7 +11,7 @@
 #pragma newdecls required
 
 // Plugin Informaiton  
-#define VERSION "2.06"
+#define VERSION "2.07"
 
 public Plugin myinfo =
 {
@@ -23,13 +23,16 @@ public Plugin myinfo =
 };
 
 //Definitions
-#define MAX_PAINTS 600
+#define CHAT_TAG_PREFIX "[{green}WS{default}] "
+
+#define MAX_PAINTS 500
 #define NUM_CSGO_WEAPONS 43
 #define CSGO_MAX_WEAPON_NAME_LENGTH 25
-#define IDWEARSEED_LENGTH 30
+#define IDWEARSEED_COMPONENT_LENGTH 12 //max length for any id, wear, seed component 
 
 #define WS_ANTI_FLOOD_TIME 0.75
 #define MAX_DIGITS_WEAR 10
+#define MAX_PRE_WEAR_BLOCKS 4
 
 #define TYPE_MENU 0
 #define TYPE_QUICK 1
@@ -43,7 +46,7 @@ public Plugin myinfo =
 enum Listing
 {
   String:listName[64],
-  index,
+  paintNum,
   Float:wear,
   stattrak,
   quality
@@ -67,7 +70,7 @@ Handle cvar_c4 = null;
 Handle cvar_saytimer = null;
 Handle cvar_rtimer = null;
 Handle cvar_rmenu = null;
-Handle cvar_anti_flood_timer = null;
+Handle cvar_anti_flood = null;
 
 //Ints
 int g_paints[MAX_PAINTS][Listing];
@@ -110,13 +113,13 @@ public void OnPluginStart()
   cvar_saytimer = CreateConVar("sm_vipspecial_saytimer", "10", "No description provided (see source). -1.0 = never show the commands in chat");
   cvar_rtimer = CreateConVar("sm_vipspecial_roundtimer", "-1.0", "No description provided (see source). -1.0 = always can use the command");
   cvar_rmenu = CreateConVar("sm_vipspecial_rmenu", "1", "No description provided (see source). 1 = enabled, 0 = disabled.");
-  cvar_anti_flood_timer = CreateConVar("sm_vipspecial_antiflood", "1", "No description provided (see source). 1 = enabled, 0 = disabled.");
+  cvar_anti_flood = CreateConVar("sm_vipspecial_antiflood", "1", "No description provided (see source). 1 = enabled, 0 = disabled.");
   
   g_c4 = GetConVarBool(cvar_c4);
   g_saytimer = GetConVarInt(cvar_saytimer);
   g_rtimer = GetConVarInt(cvar_rtimer);
   g_rmenu = GetConVarBool(cvar_rmenu);
-  g_antiflood = GetConVarBool(cvar_anti_flood_timer);
+  g_antiflood = GetConVarBool(cvar_anti_flood);
   
   //Hooks
   HookEvent("round_start", roundStart);
@@ -294,7 +297,7 @@ public void OnConVarChanged(Handle convar, const char[] oldValue, const char[] n
   else if (convar == cvar_rmenu) {
     g_rmenu = view_as<bool>(StringToInt(newValue));
   }
-  else if (convar == cvar_anti_flood_timer) {
+  else if (convar == cvar_anti_flood) {
     g_antiflood = view_as<bool>(StringToInt(newValue));
   }
 }
@@ -330,34 +333,143 @@ public Action OnClientSayCommand(int client, const char[] command_t, const char[
     )
   {
     //Get arguments
-    char idWearSeed[5][IDWEARSEED_LENGTH];
-    int returnNum = ExplodeString(sArgs, " ", idWearSeed, sizeof(idWearSeed), sizeof(idWearSeed[]), true);
+    char idWearSeed[8][64];
+    int argNum = ExplodeString(sArgs, " ", idWearSeed, sizeof(idWearSeed), sizeof(idWearSeed[]), true);
+    argNum -= 1; //dont count the command name as an argument
+    
+    //Create search string
+    char skinSearch[64];
+    int preWearBlocks = 0;  //number of blocks before wear value argument (if provided)
+    int offsetSkinNum = 0;  //number of skins to skip if search term matches more than one skin (if provided)
+    
+    for (int i = 1; i < sizeof(idWearSeed); ++i) {
+      //If we have reached the wear quick codes, break
+      if (StrEqual("FN", idWearSeed[i], false) ||
+          StrEqual("MW", idWearSeed[i], false) ||
+          StrEqual("FT", idWearSeed[i], false) ||
+          StrEqual("WW", idWearSeed[i], false) ||
+          StrEqual("BS", idWearSeed[i], false)
+          ) 
+      {
+        break;     
+      }
+      
+      //If string is numeric, we must have reached numeric id, wear or seed, break
+      if (isStringNumeric(idWearSeed[i]))
+        break;
+      
+      ++preWearBlocks;
+    }
+    
+    //Exit if too many strings provided
+    if (preWearBlocks > MAX_PRE_WEAR_BLOCKS ) {
+      CPrintToChat(client, "%s%t", CHAT_TAG_PREFIX, "Too Many Preblocks");
+      return Plugin_Handled;
+    }
+    
+    //Implode string into complete search string
+    if (preWearBlocks != 0) {
+      Format(skinSearch, sizeof(skinSearch), "%s", idWearSeed[1]);
+      
+      for (int i = 1; i < preWearBlocks; ++i) {
+        //Check for offset modifier
+        if (strlen(idWearSeed[i+1]) == 2) {
+          char firstChar = idWearSeed[i+1][0];
+          char secondChar = idWearSeed[i+1][1];
+          
+          //Get offset number
+          if (firstChar == '+' && IsCharNumeric(secondChar)) {
+            offsetSkinNum = StringToInt(idWearSeed[i+1]);
+            break;  //Don't add anymore search blocks to skinSearch after offset block
+          }
+        }
+        
+        Format(skinSearch, sizeof(skinSearch), "%s %s", skinSearch, idWearSeed[i+1]);
+      }
+    }
     
     //Parameters
     int inputIndex = DEFAULT_ID;
     float inputWear = DEFAULT_WEAR;
     int inputSeed = DEFAULT_SEED;
     
+    //Set correct indexes for the wear and seed arguments
+    //Compensate if we have no pre wear blocks
+    int wearIndex = (preWearBlocks - 1) + ((preWearBlocks == 0) ? 3 : 2);
+    int seedIndex = (preWearBlocks - 1) + ((preWearBlocks == 0) ? 4 : 3);
+    
+    //Get correct input index (via ID or skin search)
+    if (preWearBlocks == 0) {
+      inputIndex = StringToInt(idWearSeed[1]);
+    }
+    else {
+      if (g_paintCount == 0) {
+        LogError("Skin list failed to load or was unloaded at time of search.");
+        return Plugin_Handled;
+      }
+      
+      //Find a match, taking in consideration the offsetSkinNum
+      bool matchFound = false;
+      
+      for (int i = 0; i < g_paintCount; ++i) {
+        if (StrContains(g_paints[i][listName], skinSearch, false) != -1) {
+          
+          //Match found, check if offset is zero
+          if (offsetSkinNum != 0) {
+            --offsetSkinNum;
+            continue;
+          }
+          
+          //Otherwise, we will match this skin
+          inputIndex = i;
+          matchFound = true;
+          break;
+        }
+      }
+      
+      //Print error if no matches found
+      if (!matchFound) {
+        CPrintToChat(client, "%s%t", CHAT_TAG_PREFIX, "No Skin Match Found", skinSearch);
+        return Plugin_Handled;
+      }
+    }
+    
+    //Check if quickWear String (FN, MW..etc) provided as wear index
+    if (isStringNumeric(idWearSeed[wearIndex])) {
+      if (argNum >= wearIndex) //Otherwise it should be a number
+        inputWear = StringToFloat(idWearSeed[wearIndex]);
+    }
+    else {
+      //Must be a quick wear code
+      if (StrEqual("FN", idWearSeed[wearIndex], false))
+        inputWear = DEFAULT_WEAR;
+      else if (StrEqual("MW", idWearSeed[wearIndex], false))
+        inputWear = 0.25;
+      else if (StrEqual("FT", idWearSeed[wearIndex], false))
+        inputWear = 0.55;
+      else if (StrEqual("WW", idWearSeed[wearIndex], false))
+        inputWear = 0.75;
+      else if (StrEqual("BS", idWearSeed[wearIndex], false))
+        inputWear = 0.95;
+      else {
+        //FIXME: This error is never printed
+        CPrintToChat(client, "%s%t", CHAT_TAG_PREFIX, "Wear Not Recognized");
+        return Plugin_Handled;
+      }
+    }
+    
+    //Get seed if provided
+    if (argNum >= seedIndex)
+      inputSeed = StringToInt(idWearSeed[seedIndex]);
+    
     //Set parameter values
-    if (returnNum == 0) {
+    if (argNum < 0) {
       LogError("Failed to explode command string correctly.");
       return Plugin_Handled; //error occured
     }
-    else if (returnNum == 2) {
-      inputIndex = StringToInt(idWearSeed[1]);
-    }
-    else if (returnNum == 3) {
-      inputIndex = StringToInt(idWearSeed[1]);
-      inputWear = StringToFloat(idWearSeed[2]);
-    }
-    else if (returnNum == 4) {
-      inputIndex = StringToInt(idWearSeed[1]);
-      inputWear = StringToFloat(idWearSeed[2]);
-      inputSeed = StringToInt(idWearSeed[3]);
-    }
-    else if (returnNum == 5) {
-      //5 strings retrieved, too many arguments were provided
-      CPrintToChat(client, " {green}[WS]{default} %t", "Too Many Args");
+    else if (argNum == preWearBlocks + ((preWearBlocks == 0) ? 4 : 3)) {
+      //too many total strings, too many arguments were provided
+      CPrintToChat(client, "%s%t", CHAT_TAG_PREFIX, "Too Many Args");
       return Plugin_Handled;
     }
     
@@ -366,29 +478,29 @@ public Action OnClientSayCommand(int client, const char[] command_t, const char[
     
     //Only VIPS can use this plugin unless you are setting the default skin
     if (!isVIP) {
-      if (!(returnNum == 2 && inputIndex == 0)) {
-        CPrintToChat(client, " {green}[WS]{default} %t", "Must be VIP");
+      if (!(argNum == 1 && inputIndex == 0)) {
+        CPrintToChat(client, "%s%t", CHAT_TAG_PREFIX, "Must be VIP");
         return Plugin_Handled;
       }
     }
     
     // Check input wears
-    if (returnNum >= 3) {
+    if (argNum >= 2) {
       //Check range
       if (inputWear < 0.0 || inputWear > 1.0) {
-        CPrintToChat(client, " {green}[WS]{default} %t", "Wear Value Wrong");
+        CPrintToChat(client, "%s%t", CHAT_TAG_PREFIX, "Wear Value Wrong");
         return Plugin_Handled;
       }
       
       //Limit length of floating point string
       if (strlen(idWearSeed[2]) > MAX_DIGITS_WEAR) {
-        CPrintToChat(client, " {green}[WS]{default} %t", "Wear Too Long");
+        CPrintToChat(client, "%s%t", CHAT_TAG_PREFIX, "Wear Too Long");
         return Plugin_Handled;
       }
     }
     
     //Show menu
-    if (returnNum == 1) {
+    if (argNum == 0) {
       ShowMenu(client, 0);
 
       if (saytimer != null || g_saytimer == -1)
@@ -403,7 +515,7 @@ public Action OnClientSayCommand(int client, const char[] command_t, const char[
       WSkin_Selecter(TYPE_QUICK, client, inputIndex, inputWear, inputSeed);
     }
     
-    return Plugin_Continue;
+    return Plugin_Handled;
   }
   else if(StrEqual(command, "!ss", false) || StrEqual(command, "!showskin", false))
   {
@@ -418,6 +530,35 @@ public Action OnClientSayCommand(int client, const char[] command_t, const char[
   }
 
   return Plugin_Continue;
+}
+
+//Helper function that tells you if a string is numeric (int or floating point)
+bool isStringNumeric(char[] s) {
+  bool decimalFound = false;
+  
+  for (int i = 0; i < strlen(s); ++i) {
+    if (!IsCharNumeric(s[i]))
+      if (s[i] == '.') {
+        //Cant have two decimal points
+        if (decimalFound)
+          return false;
+        
+        //First and last digits can't be the decimal point
+        if (i == 0 || i == strlen(s) - 1)
+          return false;
+        
+        decimalFound = true;
+      }
+      else if (s[i] == '-') {
+        //Negative sign only allowed in first position and if more numbers follow
+        if (i != 0 || strlen(s) <= 1)
+          return false;
+      }
+      else
+        return false;
+  }
+  
+  return true;
 }
 
 //Checks and begins connection to database
@@ -467,7 +608,7 @@ public void OnDBConnect(Handle owner, Handle hndl, const char[] error, any data)
     }
   
     //Create SQL Database if it doesn't exist
-    Format(buffer, sizeof(buffer), "CREATE TABLE IF NOT EXISTS wpaints ( steamid varchar(32) NOT NULL, %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', %s varchar(64) NOT NULL DEFAULT '0;0.00001;0', PRIMARY KEY (steamid))", temp[0],temp[1],temp[2],temp[3],temp[4],temp[5],temp[6],temp[7],temp[8],temp[9],temp[10],temp[11],temp[12],temp[13],temp[14],temp[15],temp[16],temp[17],temp[18],temp[19],temp[20],temp[21],temp[22],temp[23],temp[24],temp[25],temp[26],temp[27],temp[28],temp[29],temp[30],temp[31],temp[32],temp[33],temp[34],temp[35],temp[36],temp[37],temp[38],temp[39],temp[40],temp[41],temp[42]);
+    Format(buffer, sizeof(buffer), "CREATE TABLE IF NOT EXISTS wpaints ( steamid varchar(32) NOT NULL, %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', PRIMARY KEY (steamid))", temp[0],temp[1],temp[2],temp[3],temp[4],temp[5],temp[6],temp[7],temp[8],temp[9],temp[10],temp[11],temp[12],temp[13],temp[14],temp[15],temp[16],temp[17],temp[18],temp[19],temp[20],temp[21],temp[22],temp[23],temp[24],temp[25],temp[26],temp[27],temp[28],temp[29],temp[30],temp[31],temp[32],temp[33],temp[34],temp[35],temp[36],temp[37],temp[38],temp[39],temp[40],temp[41],temp[42]);
   
     LogToFileEx(g_sCmdLogPath, "Query %s", buffer);
     SQL_TQuery(db, initDBConn_callback, buffer);
@@ -544,23 +685,17 @@ public void CheckSteamID_callback(Handle owner, Handle hndl, const char[] error,
     
     //temp is in format:  id;wear;seed  , break it apart
     //After this idWearSeed[0] contains id, idWearSeed[1] contains wear level, idWearSeed[2] contains seed
-    char idWearSeed[3][IDWEARSEED_LENGTH];
+    char idWearSeed[3][IDWEARSEED_COMPONENT_LENGTH];
     ExplodeString(temp, ";", idWearSeed, sizeof(idWearSeed), sizeof(idWearSeed[]));
     
     //Set ID value in tree
-    SetTrieValue(tree[client], Classname, StringToInt(idWearSeed[0]));
+    setID(client, Classname, StringToInt(idWearSeed[0]));
     
     //Set wear value in tree
-    char Classname_wearname[CSGO_MAX_WEAPON_NAME_LENGTH + 5];
-    Format(Classname_wearname, sizeof(Classname_wearname), "%s%s", Classname, "_wear");
-    
-    SetTrieValue(tree[client], Classname_wearname, StringToFloat(idWearSeed[1]));
+    setWear(client, Classname, StringToFloat(idWearSeed[1]));
     
     //Set seed value in tree
-    char Classname_seed[CSGO_MAX_WEAPON_NAME_LENGTH + 5];
-    Format(Classname_seed, sizeof(Classname_seed), "%s%s", Classname, "_seed");
-    
-    SetTrieValue(tree[client], Classname_seed, StringToInt(idWearSeed[2]));
+    setSeed(client, Classname, StringToInt(idWearSeed[2]));
     
     ++counter;
   }
@@ -602,19 +737,13 @@ public void AddNewClientDB_callback(Handle owner, Handle hndl, const char[] erro
   for (int i = 0; i < GetArraySize(csgo_weapons); ++i) {
     //Set ID value in tree
     GetArrayString(csgo_weapons, i, Classname, sizeof(Classname));
-    SetTrieValue(tree[client], Classname, DEFAULT_ID);
+    setID(client, Classname, DEFAULT_ID);
     
     //Set wear value in tree
-    char Classname_wearname[CSGO_MAX_WEAPON_NAME_LENGTH + 5];
-    Format(Classname_wearname, sizeof(Classname_wearname), "%s%s", Classname, "_wear");
-    
-    SetTrieValue(tree[client], Classname_wearname, DEFAULT_WEAR);
+    setWear(client, Classname, DEFAULT_WEAR);
     
     //Set seed value in tree
-    char Classname_seed[CSGO_MAX_WEAPON_NAME_LENGTH + 5];
-    Format(Classname_seed, sizeof(Classname_seed), "%s%s", Classname, "_seed");
-    
-    SetTrieValue(tree[client], Classname_seed, DEFAULT_SEED);
+    setSeed(client, Classname, DEFAULT_SEED);
   }
   
   //Set client as checked
@@ -676,30 +805,30 @@ public void OnLibraryRemoved(const char[] name)
 public Action ReloadSkins(int client, int args)
 {  
   ReadPaints();
-  ReplyToCommand(client, " \x04[WS]\x01 %T","Weapon skins plugin reloaded", client);
+  ReplyToCommand(client, " \x04[WS]\x01 %t", "Weapon paints reloaded", client);
   return Plugin_Handled;
 }
 
 //Show weaponskins menu
 void ShowMenu(int client, int item)
 {
-  SetMenuTitle(menuw, "%T", "Menu title", client);
+  SetMenuTitle(menuw, "%t", "Menu title", client);
   
   RemoveMenuItem(menuw, 1);
   RemoveMenuItem(menuw, 0);
   
   char tdisplay[64];
   
-  Format(tdisplay, sizeof(tdisplay), "%T", "Random paint", client);
+  Format(tdisplay, sizeof(tdisplay), "%t", "Random paint", client);
   InsertMenuItem(menuw, 0, "-1", tdisplay);
-  Format(tdisplay, sizeof(tdisplay), "%T", "Default paint", client);
+  Format(tdisplay, sizeof(tdisplay), "%t", "Default paint", client);
   InsertMenuItem(menuw, 1, "0", tdisplay);
   
   DisplayMenuAtItem(menuw, client, item, 0);
 }
 
 
-//Tell user what their current skin is
+//Tell everybody what their current skin is
 void ShowSkin(int client)
 {
   //Ensure  client is alive, and not root
@@ -708,7 +837,7 @@ void ShowSkin(int client)
     return;
   }
   else if (!IsClientInGame(client) || !IsPlayerAlive(client)) {
-    CPrintToChat(client, " {green}[WS]{default} %T", "You cant use this when you are dead", client);
+    CPrintToChat(client, "%s%t", CHAT_TAG_PREFIX, "You cant use this when you are dead", client);
     return;
   }
     
@@ -716,7 +845,7 @@ void ShowSkin(int client)
   
   //Ensure entity is okay
   if (weapon < 1 || !IsValidEdict(weapon) || !IsValidEntity(weapon)) {
-    CPrintToChat(client, " {green}[WS]{default} %T", "Paint not found", client);
+    CPrintToChat(client, "%s%t", CHAT_TAG_PREFIX, "Paint not found", client);
     return;
   }
   
@@ -724,14 +853,44 @@ void ShowSkin(int client)
   int search = GetEntProp(weapon, Prop_Send, "m_nFallbackPaintKit");
   
   for (int i = 1; i < g_paintCount; ++i) {
-    if (search == g_paints[i][index]) {
-      CPrintToChat(client, " {green}[WS]{default} %T", "Paint found", client, g_paints[i][listName]);
+    if (search == g_paints[i][paintNum]) {
+      
+      //Get client name who used command
+      char clientName[MAX_NAME_LENGTH+1];
+      GetClientName(client, clientName, sizeof(clientName));
+      
+      //Get the proper classname
+      char Classname[CSGO_MAX_WEAPON_NAME_LENGTH];
+      int weaponindex = getProperClassname(client, weapon, Classname);
+        
+      //Check to see if classname is allowed
+      if (weaponindex == -1) {
+        CPrintToChat(client, "%s%t", CHAT_TAG_PREFIX, "You cant use a paint in this weapon");
+        return;
+      }
+      
+      //Get stored id
+      int storedID = getStoredID(client, Classname);
+      
+      if (storedID == DEFAULT_ID) { //No skin stored for this gun, default skin
+        CPrintToChat(client, "%s%t", CHAT_TAG_PREFIX, "Paint Is Default", Classname);
+        return;
+      }
+    
+      //Get stored wear value
+      float storedWear = getStoredWear(client, Classname);
+      
+      //Get stored seed value
+      int storedSeed = getStoredSeed(client, Classname);
+      
+      CPrintToChatAll("%s%t", CHAT_TAG_PREFIX, "Paint found", clientName, g_paints[i][listName], Classname, i, storedWear, storedSeed);
+      
       return;
     }
   }
   
   //Print not found message if we failed to find paint
-  CPrintToChat(client, " {green}[WS]{default} %T", "Paint not found", client);
+  CPrintToChat(client, "%s%t", CHAT_TAG_PREFIX, "Paint not found", client);
 }
 
 public Action Tsaytimer(Handle timer)
@@ -775,7 +934,7 @@ void WSkin_Selecter(int type, int client, int inputID, float inputWear, int inpu
   if (g_antiflood) {
     if (!g_canUseWS[client]) {
       //Using ws too quickly
-      CPrintToChat(client, " {green}[WS]{default} %t", "Anti Flood Message");
+      CPrintToChat(client, "%s%t", CHAT_TAG_PREFIX, "Anti Flood Message");
       LogAction(client, -1, "\"%L\" is using !ws too quickly. Possible flood attempt.", client);
       if (type == TYPE_MENU && g_rmenu) ShowMenu(client, GetMenuSelectionPosition()); //keep menu up if using menu
       return;
@@ -784,7 +943,7 @@ void WSkin_Selecter(int type, int client, int inputID, float inputWear, int inpu
   
   //rtimer checks
   if (rtimer == null && g_rtimer != -1) {
-    CPrintToChat(client, " {green}[WS]{default} %T", "You can use this command only the first seconds", client, g_rtimer);
+    CPrintToChat(client, "%s%t", CHAT_TAG_PREFIX, "You can use this command only the first seconds", client, g_rtimer);
     if (type == TYPE_MENU && g_rmenu) ShowMenu(client, GetMenuSelectionPosition());
     return;
   }
@@ -795,103 +954,70 @@ void WSkin_Selecter(int type, int client, int inputID, float inputWear, int inpu
   
   //Ensure player is alive
   if(!IsPlayerAlive(client)) {
-    CPrintToChat(client, " {green}[WS]{default} %t", "You cant use this when you are dead");
+    CPrintToChat(client, "%s%t", CHAT_TAG_PREFIX, "You cant use this when you are dead");
     if (type == TYPE_MENU && g_rmenu) ShowMenu(client, GetMenuSelectionPosition());
     return;
   }
   
   //Hosties
   if(g_hosties && IsClientInLastRequest(client)) {
-    CPrintToChat(client, " {green}[WS]{default} %t", "You cant use this when you are in a lastrequest");
+    CPrintToChat(client, "%s%t", CHAT_TAG_PREFIX, "You cant use this when you are in a lastrequest");
     if (type == TYPE_MENU && g_rmenu) ShowMenu(client, GetMenuSelectionPosition());
     return;
   }
 
   //Ensure we don't request paint outside of range
   if (inputID < -1 || inputID >= g_paintCount) {
-    CPrintToChat(client, " {green}[WS]{default} %t", "Index out of Range", g_paintCount - 1);
+    CPrintToChat(client, "%s%t", CHAT_TAG_PREFIX, "Index out of Range", g_paintCount - 1);
     return;
   }
 
-  int windex = GetEntPropEnt(client, Prop_Send, "m_hActiveWeapon");
+  int weapon = GetEntPropEnt(client, Prop_Send, "m_hActiveWeapon");
 
   //Ensure weapon entity is okay
-  if (windex < 1 || !IsValidEdict(windex) || !IsValidEntity(windex)) {
-    CPrintToChat(client, " {green}[WS]{default} %t", "You cant use a paint in this weapon");
+  if (weapon < 1 || !IsValidEdict(weapon) || !IsValidEntity(weapon)) {
+    CPrintToChat(client, "%s%t", CHAT_TAG_PREFIX, "You cant use a paint in this weapon");
     if (type == TYPE_MENU && g_rmenu) ShowMenu(client, GetMenuSelectionPosition());
     return;
   }
-  
-  //Get active weapon classname
+    
+  //Get the proper classname
   char Classname[CSGO_MAX_WEAPON_NAME_LENGTH];
-  GetEdictClassname(windex, Classname, sizeof(Classname));
-  
-  //Taser is not skinable
-  if(StrEqual(Classname, "weapon_taser")) {
-    CPrintToChat(client, " {green}[WS]{default} %t", "You cant use a paint in this weapon");
+  int weaponindex = getProperClassname(client, weapon, Classname);
+    
+  //Check to see if classname is allowed
+  if (weaponindex == -1) {
+    CPrintToChat(client, "%s%t", CHAT_TAG_PREFIX, "You cant use a paint in this weapon");
     if (type == TYPE_MENU && g_rmenu) ShowMenu(client, GetMenuSelectionPosition());
     return;
   }
+
+  //Save indexID in trie for client
+  setID(client, Classname, inputID);
   
-  int weaponindex = GetEntProp(windex, Prop_Send, "m_iItemDefinitionIndex");
+  //Save wear
+  setWear(client, Classname, inputWear);
   
-  if (weaponindex == 42 || weaponindex == 59) {
-    CPrintToChat(client, " {green}[WS]{default} %t", "You cant use a paint in this weapon");
-    if (type == TYPE_MENU && g_rmenu) ShowMenu(client, GetMenuSelectionPosition());
-    return;
+  //Save seed
+  setSeed(client, Classname, inputSeed);
+  
+  //Call paint change plugin with these parameters
+  ChangePaint(client, weapon, Classname, weaponindex, inputID, inputWear, inputSeed);
+  FakeClientCommand(client, "use %s", Classname);
+  
+  //Print weapon skin changed message based on type of change
+  if (inputID == 0)
+    CPrintToChat(client, "%s%t", CHAT_TAG_PREFIX,"You have choose your default paint for your", Classname);
+  else if (inputID == -1)
+    CPrintToChat(client, "%s%t", CHAT_TAG_PREFIX,"You have choose a random paint for your", Classname);
+  else
+    CPrintToChat(client, "%s%t", CHAT_TAG_PREFIX, "You have choose a weapon", g_paints[inputID][listName], Classname);
+  
+  //Set anti flood timer
+  if (g_antiflood) {
+    g_canUseWS[client] = false;
+    CreateTimer(WS_ANTI_FLOOD_TIME, Timer_ReEnable_WS, client);
   }
-  
-  if (GetPlayerWeaponSlot(client, CS_SLOT_PRIMARY) == windex || GetPlayerWeaponSlot(client, CS_SLOT_SECONDARY) == windex || GetPlayerWeaponSlot(client, CS_SLOT_KNIFE) == windex || (g_c4 && GetPlayerWeaponSlot(client, CS_SLOT_C4) == windex))
-  {
-    switch (weaponindex) {
-      case 60: strcopy(Classname, sizeof(Classname), "weapon_m4a1_silencer");
-      case 61: strcopy(Classname, sizeof(Classname), "weapon_usp_silencer");
-      case 63: strcopy(Classname, sizeof(Classname), "weapon_cz75a");
-      case 500: strcopy(Classname, sizeof(Classname), "weapon_bayonet");
-      case 506: strcopy(Classname, sizeof(Classname), "weapon_knife_gut");
-      case 505: strcopy(Classname, sizeof(Classname), "weapon_knife_flip");
-      case 508: strcopy(Classname, sizeof(Classname), "weapon_knife_m9_bayonet");
-      case 507: strcopy(Classname, sizeof(Classname), "weapon_knife_karambit");
-      case 509: strcopy(Classname, sizeof(Classname), "weapon_knife_tactical");
-      case 512: strcopy(Classname, sizeof(Classname), "weapon_knife_falchion");
-      case 515: strcopy(Classname, sizeof(Classname), "weapon_knife_butterfly");
-      case 516: strcopy(Classname, sizeof(Classname), "weapon_knife_push");
-    }
-    
-    //Save indexID in trie for client
-    SetTrieValue(tree[client], Classname, inputID);
-    
-    //Save wear
-    char Classname_wearname[CSGO_MAX_WEAPON_NAME_LENGTH + 5];
-    Format(Classname_wearname, sizeof(Classname_wearname), "%s%s", Classname, "_wear");
-    SetTrieValue(tree[client], Classname_wearname, inputWear);
-    
-    //Save seed
-    char Classname_seed[CSGO_MAX_WEAPON_NAME_LENGTH + 5];
-    Format(Classname_seed, sizeof(Classname_seed), "%s%s", Classname, "_seed");
-    SetTrieValue(tree[client], Classname_seed, inputSeed);
-    
-    //Call paint change plugin with these parameters
-    ChangePaint(client, windex, Classname, weaponindex, inputID, inputWear, inputSeed);
-    FakeClientCommand(client, "use %s", Classname);
-    
-    //Print weapon skin changed message based on type of change
-    if (inputID == 0)
-      CPrintToChat(client, " {green}[WS]{default} %t","You have choose your default paint for your", Classname);
-    else if (inputID == -1)
-      CPrintToChat(client, " {green}[WS]{default} %t","You have choose a random paint for your", Classname);
-    else
-      CPrintToChat(client, " {green}[WS]{default} %t", "You have choose a weapon", g_paints[inputID][listName], Classname);
-    
-    //Set anti flood timer
-    if (g_antiflood) {
-      g_canUseWS[client] = false;
-      CreateTimer(WS_ANTI_FLOOD_TIME, Timer_ReEnable_WS, client);
-    }
-    
-  }
-  else 
-    CPrintToChat(client, " {green}[WS]{default} %t", "You cant use a paint in this weapon");
   
   if (type == TYPE_MENU && g_rmenu) ShowMenu(client, GetMenuSelectionPosition());
 }
@@ -920,7 +1046,7 @@ void ReadPaints()
   
   do {
     KvGetSectionName(kv, g_paints[g_paintCount][listName], 64); //size hardcoded here due to olddecl enums
-    g_paints[g_paintCount][index] = KvGetNum(kv, "paint", 0);
+    g_paints[g_paintCount][paintNum] = KvGetNum(kv, "paint", 0);
     g_paints[g_paintCount][wear] = KvGetFloat(kv, "wear", -1.0);
     g_paints[g_paintCount][stattrak] = KvGetNum(kv, "stattrak", -2);
     g_paints[g_paintCount][quality] = KvGetNum(kv, "quality", -2);
@@ -1004,7 +1130,7 @@ void ChangePaint(int client, int windex, char[] Classname, int weaponindex, int 
   //If ID is zero then we don't need to skin this weapon (use default skin)
   if (inputID == 0) {
     //Save preferences to DB
-    updateSkinPrefs(client, Classname, DEFAULT_ID, DEFAULT_WEAR, DEFAULT_SEED);
+    updateSkinPrefsDB(client, Classname, DEFAULT_ID, DEFAULT_WEAR, DEFAULT_SEED);
     return;
   }
 
@@ -1019,7 +1145,7 @@ void ChangePaint(int client, int windex, char[] Classname, int weaponindex, int 
   SetEntProp(entity,Prop_Send,"m_iItemIDHigh", 0);
 
   //Set skin
-  SetEntProp(entity,Prop_Send, "m_nFallbackPaintKit", g_paints[inputID][index]);
+  SetEntProp(entity,Prop_Send, "m_nFallbackPaintKit", g_paints[inputID][paintNum]);
   
   //Set wear
   SetEntPropFloat(entity, Prop_Send, "m_flFallbackWear", inputWear);
@@ -1040,7 +1166,7 @@ void ChangePaint(int client, int windex, char[] Classname, int weaponindex, int 
     SetEntProp(entity, Prop_Send, "m_iEntityQuality", 3); //3 is for the star
   
   //Save changes to datebase
-  updateSkinPrefs(client, Classname, inputID, inputWear, inputSeed);
+  updateSkinPrefsDB(client, Classname, inputID, inputWear, inputSeed);
   
   //Restore the previous itemID
   Handle pack;
@@ -1051,7 +1177,7 @@ void ChangePaint(int client, int windex, char[] Classname, int weaponindex, int 
 }
 
 //Updates database with skin preferences after a skin change
-void updateSkinPrefs(int client, char[] Classname, int inputID, float inputWear, int inputSeed)
+void updateSkinPrefsDB(int client, char[] Classname, int inputID, float inputWear, int inputSeed)
 {
   //Save changes to datebase (via UPDATE query)
   char steamid[32];
@@ -1121,18 +1247,98 @@ public Action WeaponPickUpSkin(Handle timer, Handle pack)
   if ( GetEntProp(weapon, Prop_Send, "m_hPrevOwner") > 0 || (GetEntProp(weapon, Prop_Send, "m_iItemIDHigh") == 0 && GetEntProp(weapon, Prop_Send, "m_iItemIDLow") == 2048))
     return;
     
+  //Get the proper classname
   char Classname[CSGO_MAX_WEAPON_NAME_LENGTH];
+  int weaponindex = getProperClassname(client, weapon, Classname);
+    
+  //Check to see if classname is allowed
+  if (weaponindex == -1)
+    return;
+    
+  //Get the skin ID
+  int storedID = getStoredID(client, Classname);
+  if (storedID == DEFAULT_ID) //No skin stored for this gun
+    return;
+  
+  //Get stored wear value
+  float storedWear = getStoredWear(client, Classname);
+  
+  //Get stored seed value
+  int storedSeed = getStoredSeed(client, Classname);
+  
+  //Change paint to proper skin with proper wear
+  ChangePaint(client, weapon, Classname, weaponindex, storedID, storedWear, storedSeed);
+
+}
+
+//Get stored ID value from tree
+int getStoredID(int client, char Classname[CSGO_MAX_WEAPON_NAME_LENGTH])
+{
+  int storedID = DEFAULT_ID;
+  GetTrieValue(tree[client], Classname, storedID);
+  return storedID;
+}
+
+//Get stored wear value from tree
+float getStoredWear(int client, char Classname[CSGO_MAX_WEAPON_NAME_LENGTH])
+{
+  float storedWear = DEFAULT_WEAR;
+  char Classname_wearname[CSGO_MAX_WEAPON_NAME_LENGTH + 5];
+  Format(Classname_wearname, sizeof(Classname_wearname), "%s%s", Classname, "_wear");
+  GetTrieValue(tree[client], Classname_wearname, storedWear);
+  return storedWear;
+}
+
+//Get stored seed value from tree
+int getStoredSeed(int client, char Classname[CSGO_MAX_WEAPON_NAME_LENGTH])
+{
+  int storedSeed = DEFAULT_SEED;
+  char Classname_seed[CSGO_MAX_WEAPON_NAME_LENGTH + 5];
+  Format(Classname_seed, sizeof(Classname_seed), "%s%s", Classname, "_seed");
+  GetTrieValue(tree[client], Classname_seed, storedSeed);
+  return storedSeed;
+}
+
+//Set ID value in tree
+void setID(int client, char Classname[CSGO_MAX_WEAPON_NAME_LENGTH], int id)
+{
+  SetTrieValue(tree[client], Classname, id);
+}
+
+//Set wear value in tree
+void setWear(int client, char Classname[CSGO_MAX_WEAPON_NAME_LENGTH], float wearValue)
+{
+  char Classname_wearname[CSGO_MAX_WEAPON_NAME_LENGTH + 5];
+  Format(Classname_wearname, sizeof(Classname_wearname), "%s%s", Classname, "_wear");
+  
+  SetTrieValue(tree[client], Classname_wearname, wearValue);
+}
+
+//Set seed value in tree
+void setSeed(int client, char Classname[CSGO_MAX_WEAPON_NAME_LENGTH], int seed)
+{
+  char Classname_seed[CSGO_MAX_WEAPON_NAME_LENGTH + 5];
+  Format(Classname_seed, sizeof(Classname_seed), "%s%s", Classname, "_seed");
+  
+  SetTrieValue(tree[client], Classname_seed, seed);
+}
+
+//Functions returns the proper completed classname for a given classname
+//Disallowed weapons or weapon slots will return -1
+//Otherwise, the weaponindex is returned on success and the Classname is altered
+int getProperClassname(int client, int weapon, char Classname[CSGO_MAX_WEAPON_NAME_LENGTH])
+{
   GetEdictClassname(weapon, Classname, sizeof(Classname));
   
   //Ignore tasers
   if(StrEqual(Classname, "weapon_taser"))
-    return;
+    return -1;
   
   int weaponindex = GetEntProp(weapon, Prop_Send, "m_iItemDefinitionIndex");
   
   //Ignore these weapon indexes
   if(weaponindex == 42 || weaponindex == 59)
-    return;
+    return -1;
   
   if (GetPlayerWeaponSlot(client, CS_SLOT_PRIMARY) == weapon || GetPlayerWeaponSlot(client, CS_SLOT_SECONDARY) == weapon || GetPlayerWeaponSlot(client, CS_SLOT_KNIFE) == weapon || (g_c4 && GetPlayerWeaponSlot(client, CS_SLOT_C4) == weapon))
   {
@@ -1151,27 +1357,8 @@ public Action WeaponPickUpSkin(Handle timer, Handle pack)
       case 516: strcopy(Classname, sizeof(Classname), "weapon_knife_push");
     }
     
-    //Get the skin ID
-    int storedID = 0;
-    GetTrieValue(tree[client], Classname, storedID);
-    if (storedID == 0) //No skin stored for this gun
-      return;
-    
-    //Get stored wear value
-    float storedWear = DEFAULT_WEAR;
-    
-    char Classname_wearname[CSGO_MAX_WEAPON_NAME_LENGTH + 5];
-    Format(Classname_wearname, sizeof(Classname_wearname), "%s%s", Classname, "_wear");
-    GetTrieValue(tree[client], Classname_wearname, storedWear);
-    
-    //Get stored seed value
-    int storedSeed = DEFAULT_SEED;
-    
-    char Classname_seed[CSGO_MAX_WEAPON_NAME_LENGTH + 5];
-    Format(Classname_seed, sizeof(Classname_seed), "%s%s", Classname, "_seed");
-    GetTrieValue(tree[client], Classname_seed, storedSeed);
-    
-    //Change paint to proper skin with proper wear
-    ChangePaint(client, weapon, Classname, weaponindex, storedID, storedWear, storedSeed);
+    return weaponindex;
   }
+  else
+    return -1;
 }
