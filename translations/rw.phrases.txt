@@ -54,13 +54,18 @@
   }
   "Paint found"
   {
+    "#format"	"{1:s},{2:s},{3:s},{4:d},{5:f},{6:d}"
+    "en"		"{lightgreen}{1}{default} is using the {purple}{2}{default} ({purple}{4}{default}) skin for their {purple}{3}{default}. Wear level: {lightgreen}{5}{default}. Seed: {lightgreen}{6}{default}"
+  }
+  "Paint Is Default"
+  {
     "#format"	"{1:s}"
-    "en"		"The skin of this weapon is{purple} {1}."
+    "en" "You have not applied a skin to your {purple}{1}{default}."
   }
   "Index out of Range"
   {
     "#format"	"{1:d}"
-    "en"		"You have selected an out of range index. Valid index range is {purple}0 - {1}"
+    "en"		"You have selected an out of range index. Valid index range is {purple}1 - {1}{default}. Use {purple}0{default} for the default skin and {purple}-1{default} for a random skin."
   }
   "Must be VIP"
   {
@@ -70,16 +75,29 @@
   {
     "en"			"Wear value must be between {green}0.0{default} and {green}1.0{default}."
   }
+  "Wear Not Recognized"
+  {
+    "en"			"Wear not recognized. Acceptable wears: {green}FN{default}, {green}MW{default}, {green}FT{default}, {green}WW{default} and {green}BS{default}."
+  }
   "Wear Too Long"
   {
     "en"			"Too many digits in wear value. Please shorten the wear value."
   }
   "Too Many Args"
   {
-    "en" "Too many arguments provided. Usage: !ws <skin_number> <wear> <pattern_seed>"
+    "en" "Too many arguments provided. Usage: !ws <skin name or skin id> <wear> <pattern_seed>"
   }
   "Anti Flood Message"
   {
     "en" "You are using this plugin too quickly, please wait a little then try again."
+  }
+  "Too Many Preblocks"
+  {
+    "en" "The skin name you are trying to search for has too many spaces."
+  }
+  "No Skin Match Found"
+  {
+    "#format"	"{1:s}"
+    "en"		"Sorry, no skin was found that contains: {purple}{1}"
   }
 }

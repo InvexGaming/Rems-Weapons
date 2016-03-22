@@ -11,12 +11,12 @@
 #pragma newdecls required
 
 // Plugin Informaiton  
-#define VERSION "2.08"
-#define SERVER_LOCK_IP ""
+#define VERSION "2.12"
+#define SERVER_LOCK_IP "127.0.0.1"
 
 public Plugin myinfo =
 {
-  name = "CS:GO VIP Plugin",
+  name = "CS:GO VIP Plugin (rw)",
   author = "Invex | Byte",
   description = "Special actions for VIP players.",
   version = VERSION,
@@ -24,11 +24,11 @@ public Plugin myinfo =
 };
 
 //Definitions
-#define CHAT_TAG_PREFIX "[{green}WS{default}] "
+#define CHAT_TAG_PREFIX "[{green}RW{default}] "
 
 #define MAX_PAINTS 500
-#define NUM_CSGO_WEAPONS 43
-#define CSGO_MAX_WEAPON_NAME_LENGTH 25
+#define NUM_CSGO_WEAPONS 44
+#define CSGO_MAX_WEAPON_NAME_LENGTH 28
 #define IDWEARSEED_COMPONENT_LENGTH 12 //max length for any id, wear, seed component 
 
 #define WS_ANTI_FLOOD_TIME 0.75
@@ -98,14 +98,14 @@ public void OnPluginStart()
   if (strcmp(SERVER_LOCK_IP, "") != 0) {
     char m_szIP[64];
     int m_unIP = GetConVarInt(FindConVar("hostip"));
-    Format(m_szIP, sizeof(m_szIP), "%d.%d.%d.%d:%d", (m_unIP >> 24) & 0x000000FF, (m_unIP >> 16) & 0x000000FF, (m_unIP >> 8) & 0x000000FF, m_unIP & 0x000000FF, GetConVarInt(FindConVar("hostport")));
+    Format(m_szIP, sizeof(m_szIP), "%d.%d.%d.%d", (m_unIP >> 24) & 0x000000FF, (m_unIP >> 16) & 0x000000FF, (m_unIP >> 8) & 0x000000FF, m_unIP & 0x000000FF);
 
     if (strcmp(SERVER_LOCK_IP, m_szIP) != 0)
       SetFailState("Nope.");
   }
   
   //Translations
-  LoadTranslations("weaponpaints.phrases");
+  LoadTranslations("rw.phrases");
 
   //Store log file path, unique log per plugin load
   for (int i = 0;; i++) {
@@ -279,6 +279,9 @@ public void OnPluginStart()
   
   Format(weapon, sizeof(weapon), "weapon_knife_push");
   PushArrayString(csgo_weapons, weapon);
+  
+  Format(weapon, sizeof(weapon), "weapon_knife_survival_bowie");
+  PushArrayString(csgo_weapons, weapon);
 
   //Process players and set them up
   for (int client = 1; client <= MaxClients; ++client) {
@@ -335,13 +338,13 @@ public Action OnClientSayCommand(int client, const char[] command_t, const char[
     strcopy(command, sizeof(command), sArgs);
   
   //Check if command starts with following strings
-  if( StrEqual(command, "!ws", false) ||
-      StrEqual(command, "!wskin", false) ||
+  if( StrEqual(command, "!rw", false) ||
+      StrEqual(command, "!rwskin", false) ||
+      StrEqual(command, "!rwskins", false) ||
+      StrEqual(command, "!ws", false) ||
       StrEqual(command, "!wskins", false) ||
       StrEqual(command, "!pk", false) ||
-      StrEqual(command, "!paints", false) ||
-      StrEqual(command, "!pkits", false) ||
-      StrEqual(command, "!rvip", false)
+      StrEqual(command, "!paints", false)
     )
   {
     //Get arguments
@@ -620,7 +623,7 @@ public void OnDBConnect(Handle owner, Handle hndl, const char[] error, any data)
     }
   
     //Create SQL Database if it doesn't exist
-    Format(buffer, sizeof(buffer), "CREATE TABLE IF NOT EXISTS wpaints ( steamid varchar(32) NOT NULL, %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', PRIMARY KEY (steamid))", temp[0],temp[1],temp[2],temp[3],temp[4],temp[5],temp[6],temp[7],temp[8],temp[9],temp[10],temp[11],temp[12],temp[13],temp[14],temp[15],temp[16],temp[17],temp[18],temp[19],temp[20],temp[21],temp[22],temp[23],temp[24],temp[25],temp[26],temp[27],temp[28],temp[29],temp[30],temp[31],temp[32],temp[33],temp[34],temp[35],temp[36],temp[37],temp[38],temp[39],temp[40],temp[41],temp[42]);
+    Format(buffer, sizeof(buffer), "CREATE TABLE IF NOT EXISTS wpaints ( steamid varchar(32) NOT NULL, %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', %s varchar(32) NOT NULL DEFAULT '0;0.00001;0', PRIMARY KEY (steamid))", temp[0],temp[1],temp[2],temp[3],temp[4],temp[5],temp[6],temp[7],temp[8],temp[9],temp[10],temp[11],temp[12],temp[13],temp[14],temp[15],temp[16],temp[17],temp[18],temp[19],temp[20],temp[21],temp[22],temp[23],temp[24],temp[25],temp[26],temp[27],temp[28],temp[29],temp[30],temp[31],temp[32],temp[33],temp[34],temp[35],temp[36],temp[37],temp[38],temp[39],temp[40],temp[41],temp[42], temp[43]);
   
     LogToFileEx(g_sCmdLogPath, "Query %s", buffer);
     SQL_TQuery(db, initDBConn_callback, buffer);
@@ -1003,7 +1006,7 @@ void WSkin_Selecter(int type, int client, int inputID, float inputWear, int inpu
     if (type == TYPE_MENU && g_rmenu) ShowMenu(client, GetMenuSelectionPosition());
     return;
   }
-
+  
   //Save indexID in trie for client
   setID(client, Classname, inputID);
   
@@ -1152,7 +1155,7 @@ void ChangePaint(int client, int windex, char[] Classname, int weaponindex, int 
   //Preserve m_iItemIDHigh and m_iItemIDLow
   int m_iItemIDHigh = GetEntProp(entity, Prop_Send, "m_iItemIDHigh");
   int m_iItemIDLow = GetEntProp(entity, Prop_Send, "m_iItemIDLow");
-
+  
   SetEntProp(entity,Prop_Send,"m_iItemIDLow", 2048);
   SetEntProp(entity,Prop_Send,"m_iItemIDHigh", 0);
 
@@ -1258,11 +1261,11 @@ public Action WeaponPickUpSkin(Handle timer, Handle pack)
   //Check previous owner and item id's
   if ( GetEntProp(weapon, Prop_Send, "m_hPrevOwner") > 0 || (GetEntProp(weapon, Prop_Send, "m_iItemIDHigh") == 0 && GetEntProp(weapon, Prop_Send, "m_iItemIDLow") == 2048))
     return;
-    
+
   //Get the proper classname
   char Classname[CSGO_MAX_WEAPON_NAME_LENGTH];
   int weaponindex = getProperClassname(client, weapon, Classname);
-    
+
   //Check to see if classname is allowed
   if (weaponindex == -1)
     return;
@@ -1280,7 +1283,6 @@ public Action WeaponPickUpSkin(Handle timer, Handle pack)
   
   //Change paint to proper skin with proper wear
   ChangePaint(client, weapon, Classname, weaponindex, storedID, storedWear, storedSeed);
-
 }
 
 //Get stored ID value from tree
@@ -1340,7 +1342,8 @@ void setSeed(int client, char Classname[CSGO_MAX_WEAPON_NAME_LENGTH], int seed)
 //Otherwise, the weaponindex is returned on success and the Classname is altered
 int getProperClassname(int client, int weapon, char Classname[CSGO_MAX_WEAPON_NAME_LENGTH])
 {
-  GetEdictClassname(weapon, Classname, sizeof(Classname));
+  if (!GetEdictClassname(weapon, Classname, sizeof(Classname)))
+    return -1;
   
   //Ignore tasers
   if(StrEqual(Classname, "weapon_taser"))
@@ -1358,6 +1361,7 @@ int getProperClassname(int client, int weapon, char Classname[CSGO_MAX_WEAPON_NA
       case 60: strcopy(Classname, sizeof(Classname), "weapon_m4a1_silencer");
       case 61: strcopy(Classname, sizeof(Classname), "weapon_usp_silencer");
       case 63: strcopy(Classname, sizeof(Classname), "weapon_cz75a");
+      case 64: strcopy(Classname, sizeof(Classname), "weapon_revolver");
       case 500: strcopy(Classname, sizeof(Classname), "weapon_bayonet");
       case 506: strcopy(Classname, sizeof(Classname), "weapon_knife_gut");
       case 505: strcopy(Classname, sizeof(Classname), "weapon_knife_flip");
@@ -1365,6 +1369,7 @@ int getProperClassname(int client, int weapon, char Classname[CSGO_MAX_WEAPON_NA
       case 507: strcopy(Classname, sizeof(Classname), "weapon_knife_karambit");
       case 509: strcopy(Classname, sizeof(Classname), "weapon_knife_tactical");
       case 512: strcopy(Classname, sizeof(Classname), "weapon_knife_falchion");
+      case 514: strcopy(Classname, sizeof(Classname), "weapon_knife_survival_bowie");
       case 515: strcopy(Classname, sizeof(Classname), "weapon_knife_butterfly");
       case 516: strcopy(Classname, sizeof(Classname), "weapon_knife_push");
     }
