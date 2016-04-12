@@ -11,7 +11,7 @@
 #pragma newdecls required
 
 // Plugin Informaiton  
-#define VERSION "2.12"
+#define VERSION "2.13"
 #define SERVER_LOCK_IP "127.0.0.1"
 
 public Plugin myinfo =
@@ -1289,7 +1289,11 @@ public Action WeaponPickUpSkin(Handle timer, Handle pack)
 int getStoredID(int client, char Classname[CSGO_MAX_WEAPON_NAME_LENGTH])
 {
   int storedID = DEFAULT_ID;
-  GetTrieValue(tree[client], Classname, storedID);
+  
+  //Ensure tree[client] exists and handle is valid as it may not be valid yet
+  if (tree[client] != null)
+    GetTrieValue(tree[client], Classname, storedID);
+  
   return storedID;
 }
 
