@@ -11,8 +11,8 @@
 #pragma newdecls required
 
 // Plugin Informaiton  
-#define VERSION "2.13"
-#define SERVER_LOCK_IP "127.0.0.1"
+#define VERSION "2.14"
+#define SERVER_LOCK_IP "45.121.211.57"
 
 public Plugin myinfo =
 {
@@ -1253,6 +1253,12 @@ public Action WeaponPickUpSkin(Handle timer, Handle pack)
   //Check client
   if (!IsClientInGame(client) || !IsPlayerAlive(client) || (g_hosties && IsClientInLastRequest(client)))
     return; 
+  
+  //Check if VIP
+  int isVIP = CheckCommandAccess(client, "", FlagToBit(wsFlag));
+  
+  if (!isVIP)
+    return;
   
   //Check weapon
   if(weapon == INVALID_ENT_REFERENCE || weapon < 1 || !IsValidEdict(weapon) || !IsValidEntity(weapon))
