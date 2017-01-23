@@ -1,0 +1,91 @@
+"weapon_ak47"
+"weapon_aug"
+"weapon_awp"
+"weapon_c4"
+"weapon_cz75a"
+"weapon_deagle"
+"weapon_elite"
+"weapon_famas"
+"weapon_fiveseven"
+"weapon_g3sg1"
+"weapon_galilar"
+"weapon_glock"
+"weapon_bayonet"
+"weapon_knife_survival_bowie"
+"weapon_knife_butterfly"
+"weapon_knife_falchion"
+"weapon_knife_flip"
+"weapon_knife_gut"
+"weapon_knife_tactical"
+"weapon_knife_karambit"
+"weapon_knife_m9_bayonet"
+"weapon_knife_push"
+"weapon_m249"
+"weapon_m4a1"
+"weapon_m4a1_silencer"
+"weapon_mac10"
+"weapon_mag7"
+"weapon_mp7"
+"weapon_mp9"
+"weapon_negev"
+"weapon_nova"
+"weapon_hkp2000"
+"weapon_p250"
+"weapon_p90"
+"weapon_bizon"
+"weapon_revolver"
+"weapon_sawedoff"
+"weapon_scar20"
+"weapon_sg556"
+"weapon_ssg08"
+"weapon_tec9"
+"weapon_ump45"
+"weapon_usp_silencer"
+"weapon_xm1014"
+
+
+//Alphabetical
+AK-47
+AUG
+AWP
+C4
+CZ75 Auto
+Deagle
+Dual Berettas
+Famas
+Five-SeveN
+G3SG1
+Galil AR
+Glock
+Knife (Bayonet)
+Knife (Bowie)
+Knife (Butterfly)
+Knife (Falchion)
+Knife (Flip)
+Knife (Gut)
+Knife (Huntsman)
+Knife (Karambit)
+Knife (M9 Bayonet)
+Knife (Shadow Daggers)
+M249
+M4A1
+M4A1-S
+MAC-10
+MAG-7
+MP7
+MP9
+Negev
+Nova
+P2000
+P250
+P90
+PP-Bizon
+R8 Revolver
+Sawed-Off
+SCAR-20
+SG 553
+SSG 08
+Tec-9
+UMP-45
+USP-S
+XM1014

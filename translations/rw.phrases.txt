@@ -1,103 +1,119 @@
 ﻿"Phrases"
 {
-  "Menu title"
+  "Preferences Not Loaded"
   {
-    "en"		"Choose a skin for your weapon:"
+    "en"		"Your preferences have not been loaded yet. Please wait a little then try again."
   }
-  "Weapon paints reloaded"
-  {
-    "en"		"Weapon paints reloaded."
-  }
-  "You cant use this when you are dead"
-  {
-    "en"		"You cant use this plugin when you are dead."
-  }
-  "You cant use this when you are in a lastrequest"
+  "In LastRequest"
   {
     "en"		"You cant use this plugin when you are in a lastrequest."
   }
-  "You cant use a paint in this weapon"
+  "Anti Flood Message"
   {
-    "en"		"You cant apply skins to this weapon."
-  }
-  "You have choose your default paint for your"
-  {
-    "#format"	"{1:s}"
-    "en"		"You have choosen {purple}the default skin {default}for your{purple} {1}."
-  }
-  "You have choose a random paint for your"
-  {
-    "#format"	"{1:s}"
-    "en"		"You have choosen {purple}a random skin {default}for your{purple} {1}."
-  }
-  "You have choose a weapon"
-  {
-    "#format"	"{1:s},{2:s}"
-    "en"		"You have choosen {purple}{1} {default}for your{purple} {2}."
-  }
-  "You can use this command only the first seconds"
-  {
-    "#format"	"{1:i}"
-    "en"		"You can only use this command in the first{purple} {1} {default}seconds of the round."
-  }
-  "Random paint"
-  {
-    "en"		"Random skin"
-  }
-  "Default paint"
-  {
-    "en"		"Default skin"
-  }
-  "Paint not found"
-  {
-    "en"		"Skin not found for this weapon."
-  }
-  "Paint found"
-  {
-    "#format"	"{1:s},{2:s},{3:s},{4:d},{5:f},{6:d}"
-    "en"		"{lightgreen}{1}{default} is using the {purple}{2}{default} ({purple}{4}{default}) skin for their {purple}{3}{default}. Wear level: {lightgreen}{5}{default}. Seed: {lightgreen}{6}{default}"
-  }
-  "Paint Is Default"
-  {
-    "#format"	"{1:s}"
-    "en" "You have not applied a skin to your {purple}{1}{default}."
-  }
-  "Index out of Range"
-  {
-    "#format"	"{1:d}"
-    "en"		"You have selected an out of range index. Valid index range is {purple}1 - {1}{default}. Use {purple}0{default} for the default skin and {purple}-1{default} for a random skin."
+    "en" "You are using this plugin too quickly. Please wait a little then try again."
   }
   "Must be VIP"
   {
-    "en"			"You must be a VIP user to use this command. Type {green}!vip{default} to learn more."
+    "en"			"You must be a VIP user to use this command. Type {lightgreen}!vip{default} to learn more."
+  }
+  "Bad Targetted Weapon - Dead"
+  {
+    "en" "You cannot target your {purple}active weapon{default} while dead."
+  }
+  "Bad Targetted Weapon - Alive"
+  {
+    "en" "Your current {purple}active weapon{default} is not supported."
+  }
+  "Generic Enter Chat"
+  {
+    "#format"	"{1:s}"
+    "en" "Please enter the {lightgreen}{1}{default} into chat and press {lightgreen}ENTER{default}..."
+  }
+  "Generic Value Updated"
+  {
+    "#format"	"{1:s},{2:s},{3:s}"
+    "en"			"The {lightgreen}{1}{default} of your {purple}{2}{default} has been set to {lightgreen}{3}{default}."
+  }
+  "Weapon Selected"
+  {
+    "#format"	"{1:s}"
+    "en"		"You have chosen to target your {purple}{1}{default}."
+  }
+  "Skin Selected Default"
+  {
+    "#format"	"{1:s}"
+    "en"		"You have chosen {lightgreen}the default skin{default} for your {purple}{1}{default}."
+  }
+  "Skin Selected Normal"
+  {
+    "#format"	"{1:s},{2:s}"
+    "en"		"You have chosen the {lightgreen}{1}{default} skin for your {purple}{2}{default}."
+  }
+  "Skin Selected Not Found"
+  {
+    "#format"	"{1:s}"
+    "en"		"No skin was found with the name {lightgreen}{1}{default}."
   }
   "Wear Value Wrong"
   {
-    "en"			"Wear value must be between {green}0.0{default} and {green}1.0{default}."
+    "en"			"Wear value must be a float between {lightgreen}0.0{default} and {lightgreen}1.0{default}."
   }
-  "Wear Not Recognized"
+  "Seed Value Wrong"
   {
-    "en"			"Wear not recognized. Acceptable wears: {green}FN{default}, {green}MW{default}, {green}FT{default}, {green}WW{default} and {green}BS{default}."
+    "en"			"Seed value must be a {lightgreen}positive{default} integer between {lightgreen}0{default} and {lightgreen}2147483647{default}."
   }
-  "Wear Too Long"
+  "Stattrak Toggled"
   {
-    "en"			"Too many digits in wear value. Please shorten the wear value."
+    "#format"	"{1:s},{2:s}"
+    "en"		"StatTrak™ has been toggled {lightgreen}{1}{default} for your {purple}{2}{default}."
   }
-  "Too Many Args"
-  {
-    "en" "Too many arguments provided. Usage: !ws <skin name or skin id> <wear> <pattern_seed>"
-  }
-  "Anti Flood Message"
-  {
-    "en" "You are using this plugin too quickly, please wait a little then try again."
-  }
-  "Too Many Preblocks"
-  {
-    "en" "The skin name you are trying to search for has too many spaces."
-  }
-  "No Skin Match Found"
+  "Stattrak Lock Toggled On"
   {
     "#format"	"{1:s}"
-    "en"		"Sorry, no skin was found that contains: {purple}{1}"
+    "en"		"StatTrak™ kill counter lock has been toggled {lightgreen}ON{default} for your {purple}{1}{default}. Your kill counter value is now locked."
+  }
+  "Stattrak Lock Toggled Off"
+  {
+    "#format"	"{1:s}"
+    "en"		"StatTrak™ kill counter lock has been toggled {lightgreen}OFF{default} for your {purple}{1}{default}. Kills will now be tracked by your kill counter."
+  }
+  "Stattrak Kill Count Value Wrong"
+  {
+    "en"  "StatTrak™ kill count value must be an integer that is {lightgreen}0{default} or higher."
+  }
+  "Nametag Value Wrong"
+  {
+    "#format"	"{1:d}"
+    "en"			"Nametags must be between {lightgreen}1{default} and {lightgreen}{1}{default} characters long{default}."
+  }
+  "Nametag Removed"
+  {
+    "#format"	"{1:s}"
+    "en"			"The nametag of your {purple}{1}{default} has been removed."
+  }
+  "Weapon Preferences Reset"
+  {
+    "#format"	"{1:s}"
+    "en"  "Your preferences have been reset for your {purple}{1}{default}."
+  }
+  "Preset Save"
+  {
+    "#format"	"{1:s},{2:s}"
+    "en"  "Your {purple}{1}{default} preferences have been saved into {purple}{2}{default}."
+  }
+  "Preset Load"
+  {
+    "#format"	"{1:s},{2:s}"
+    "en"  "{purple}{1}{default} preferences have been loaded for your {purple}{2}{default}."
+  }
+  "Preset Reset"
+  {
+    "#format"	"{1:s}"
+    "en"  "{purple}{1}{default} preferences have been reset to default values."
+  }
+  "Preset Print Info"
+  {
+    "#format"	"{1:s}"
+    "en"  "{purple}{1}{default} preferences have been printed to your {lightgreen}CONSOLE{default}."
   }
 }
