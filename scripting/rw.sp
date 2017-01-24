@@ -229,15 +229,18 @@ public Action Event_PlayerDeath(Event event, const char[] name, bool dontBroadca
     g_selectedWeaponIndex[client] = 0;
   }
   
-  //Process stattrack kills for attacker
-  int wlIndex = GetActiveWeaponListIndex(attacker);
-  if (wlIndex != -1 && !g_rwPreferences[attacker][wlIndex][stattrakLock]) {
-    if (attacker > 0 && attacker <= MaxClients && IsClientInGame(attacker) && IsPlayerAlive(attacker)) {
-      int newStattrakKills = g_rwPreferences[attacker][wlIndex][stattrak];
-      if (newStattrakKills >= 0) {
-        ++newStattrakKills; //increase by one
-        g_rwPreferences[attacker][wlIndex][stattrak] = newStattrakKills;
-        StorePreferenceValue(attacker, INPUT_STATTRAK, newStattrakKills, _, _, false);
+  //Ignore console/world
+  if (attacker != 0) {
+    //Process stattrack kills for attacker
+    int wlIndex = GetActiveWeaponListIndex(attacker);
+    if (wlIndex != -1 && !g_rwPreferences[attacker][wlIndex][stattrakLock]) {
+      if (attacker > 0 && attacker <= MaxClients && IsClientInGame(attacker) && IsPlayerAlive(attacker)) {
+        int newStattrakKills = g_rwPreferences[attacker][wlIndex][stattrak];
+        if (newStattrakKills >= 0) {
+          ++newStattrakKills; //increase by one
+          g_rwPreferences[attacker][wlIndex][stattrak] = newStattrakKills;
+          StorePreferenceValue(attacker, INPUT_STATTRAK, newStattrakKills, _, _, false);
+        }
       }
     }
   }
@@ -260,7 +263,7 @@ public Action WeaponPickUpSkin(Handle timer, DataPack pack)
   
   client = EntRefToEntIndex(pack.ReadCell());
   weapon = EntRefToEntIndex(pack.ReadCell());
-  
+ 
   //Check client
   if (!IsClientInGame(client) || !IsPlayerAlive(client))
     return Plugin_Handled;
@@ -278,7 +281,7 @@ public Action WeaponPickUpSkin(Handle timer, DataPack pack)
   //Check weapon
   if(weapon == INVALID_ENT_REFERENCE || weapon < 1 || !IsValidEdict(weapon) || !IsValidEntity(weapon))
     return Plugin_Handled;
-  
+    
   //Check previous owner and item id's
   if (GetEntProp(weapon, Prop_Send, "m_hPrevOwner") > 0 || GetEntProp(weapon, Prop_Send, "m_iItemIDHigh") == -1)
     return Plugin_Handled;
@@ -297,6 +300,28 @@ public Action WeaponPickUpSkin(Handle timer, DataPack pack)
     return Plugin_Handled;
   
   GivePlayerRWItem(client, weapon, Classname, g_rwPreferences[client][wlIndex][paint], g_rwPreferences[client][wlIndex][wear], g_rwPreferences[client][wlIndex][seed], g_rwPreferences[client][wlIndex][stattrak], g_rwPreferences[client][wlIndex][entityQuality], g_rwPreferences[client][wlIndex][nametagText], g_rwPreferences[client][wlIndex][nametagColourCode], g_rwPreferences[client][wlIndex][nametagFontSize]);
+  
+  //Switch to weapon that we just have to player
+  //We do this with a slight delay to avoid invisible arms/floating gun bug
+  DataPack pack2 = new DataPack();
+  CreateDataTimer(0.05, DelayedSwitch, pack2);
+  pack2.WriteCell(EntIndexToEntRef(client));
+  pack2.WriteString(Classname);
+  
+  return Plugin_Handled;
+}
+
+public Action DelayedSwitch(Handle timer, DataPack pack)
+{
+  int client;
+  char classname[64];
+  pack.Reset();
+  
+  client = EntRefToEntIndex(pack.ReadCell());
+  pack.ReadString(classname, sizeof(classname));
+
+  //Switch to weapon that we just have to player
+  SwitchToWeaponClassname(client, classname);
   
   return Plugin_Handled;
 }
@@ -1979,7 +2004,7 @@ void ReloadWeapon(int client)
   
   GivePlayerRWItem(client, weapon, Classname, g_rwPreferences[client][wlIndex][paint], g_rwPreferences[client][wlIndex][wear], g_rwPreferences[client][wlIndex][seed], g_rwPreferences[client][wlIndex][stattrak], g_rwPreferences[client][wlIndex][entityQuality], g_rwPreferences[client][wlIndex][nametagText], g_rwPreferences[client][wlIndex][nametagColourCode], g_rwPreferences[client][wlIndex][nametagFontSize]);
   
-  //Switch to weapon that we just have to player
+  //Switch to weapon that we just gave to player
   SwitchToWeapon(client, wlIndex);
   
   //Set anti flood timer
@@ -2096,8 +2121,10 @@ void GivePlayerRWItem(int client, int weaponEntity, char[] weaponClassname, int 
     //Or else a crash is caused if weapons are left on the ground
     //And we reach the end of 'round_end' time
     CS_DropWeapon(client, newWeaponEntity, false, true);
-    EquipPlayerWeapon(client, newWeaponEntity);
   }
+  
+  //Now we equip the weapon (gun or knife)
+  EquipPlayerWeapon(client, newWeaponEntity);
 }
 
 //Is classname a knife
