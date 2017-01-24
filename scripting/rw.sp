@@ -11,7 +11,7 @@
 #pragma newdecls required
 
 // Plugin Informaiton  
-#define VERSION "3.00"
+#define VERSION "3.01"
 #define SERVER_LOCK_IP "45.121.211.57"
 
 //Convars
@@ -246,21 +246,20 @@ public Action Event_PlayerDeath(Event event, const char[] name, bool dontBroadca
 //Skin weapons that we pick up
 public Action OnPostWeaponEquip(int client, int weapon)
 {
-  Handle pack;
+  DataPack pack = new DataPack();
   CreateDataTimer(0.0, WeaponPickUpSkin, pack);
-  WritePackCell(pack, EntIndexToEntRef(weapon));
-  WritePackCell(pack, client);
+  pack.WriteCell(EntIndexToEntRef(client));
+  pack.WriteCell(EntIndexToEntRef(weapon));
 }
 
 //Apply skin to weapon that was equiped
-public Action WeaponPickUpSkin(Handle timer, Handle pack)
+public Action WeaponPickUpSkin(Handle timer, DataPack pack)
 {
-  int weapon, client
-    
-  ResetPack(pack);
+  int client, weapon;
+  pack.Reset();
   
-  weapon = EntRefToEntIndex(ReadPackCell(pack));
-  client = ReadPackCell(pack);
+  client = EntRefToEntIndex(pack.ReadCell());
+  weapon = EntRefToEntIndex(pack.ReadCell());
   
   //Check client
   if (!IsClientInGame(client) || !IsPlayerAlive(client))
@@ -401,7 +400,7 @@ public Action OnClientSayCommand(int client, const char[] command_t, const char[
       StrContains(command, "!wskins", false) == 0 ||
       StrContains(command, "!pk", false) == 0 ||
       StrContains(command, "!paints", false) == 0 ||
-     StrContains(command, "/rw", false) == 0 ||
+      StrContains(command, "/rw", false) == 0 ||
       StrContains(command, "/rwskin", false) == 0 ||
       StrContains(command, "/rwskins", false) == 0 ||
       StrContains(command, "/ws", false) == 0 ||
@@ -1096,12 +1095,6 @@ public int GunSelectMenuHandler(Menu menu, MenuAction action, int client, int it
     }
   }
   else if (action == MenuAction_Select) {
-    //Ensure valid target exists
-    int wlIndex = GetTargetedWeaponListIndex(client, true);
-    if (wlIndex == -1) {
-      DisplayMenuAtItem(menu, client, GetMenuSelectionPosition(), MENU_TIME_FOREVER);
-      return 0;
-    }
     
     char info[64];
     GetMenuItem(menu, itemNum, info, sizeof(info));
@@ -1109,11 +1102,15 @@ public int GunSelectMenuHandler(Menu menu, MenuAction action, int client, int it
     //Select weapon to target
     g_selectedWeaponIndex[client] = StringToInt(info);
     
-    char weaponName[64];
-    Format(weaponName, sizeof(weaponName), weaponListNiceNames[wlIndex]);
-    if (g_selectedWeaponIndex[client] == -1)
-      Format(weaponName, sizeof(weaponName), "Active Weapon");
-    CPrintToChat(client, "%s%t", CHAT_TAG_PREFIX, "Weapon Selected", weaponName);
+    int wlIndex = GetTargetedWeaponListIndex(client, false);
+    
+    if (wlIndex != -1) {
+      char weaponName[64];
+      Format(weaponName, sizeof(weaponName), weaponListNiceNames[wlIndex]);
+      if (g_selectedWeaponIndex[client] == -1)
+        Format(weaponName, sizeof(weaponName), "Active Weapon");
+      CPrintToChat(client, "%s%t", CHAT_TAG_PREFIX, "Weapon Selected", weaponName);
+    }
 
     DisplayMenuAtItem(mainMenu[client], client, 0, MENU_TIME_FOREVER);
   }
@@ -1908,17 +1905,17 @@ void SwitchToThenReloadWeapon(int client, int wlIndex)
 }
 
 //Switches client to given weapon
-void SwitchToWeapon(int client, int wlIndex)
+void SwitchToWeaponClassname(int client, char[] classname)
 {
   if (!IsClientInGame(client) || !IsPlayerAlive(client))
     return;
     
   char weaponName[64];
-  bool isKnife = IsKnife(weaponList[wlIndex]);
+  bool isKnife = IsKnife(classname);
   if (isKnife)
     Format(weaponName, sizeof(weaponName), "weapon_knife");
   else
-    Format(weaponName, sizeof(weaponName), weaponList[wlIndex]);
+    Format(weaponName, sizeof(weaponName), classname);
   
   //Handle special cases
   if (StrEqual(weaponName, "weapon_usp_silencer"))
@@ -1929,8 +1926,15 @@ void SwitchToWeapon(int client, int wlIndex)
     Format(weaponName, sizeof(weaponName), "weapon_p250");
   else if (StrEqual(weaponName, "weapon_revolver"))
     Format(weaponName, sizeof(weaponName), "weapon_deagle");
-  
+    
   FakeClientCommand(client, "use %s", weaponName);
+}
+
+//Switches client to given weapon
+void SwitchToWeapon(int client, int wlIndex)
+{
+  if (wlIndex != -1)
+    SwitchToWeaponClassname(client, weaponList[wlIndex]);
 }
 
 //Reload a players active weapon to apply new settings
@@ -1999,9 +2003,9 @@ stock int GetReserveAmmo(int client, int weapon)
   return GetEntProp(client, Prop_Send, "m_iAmmo", _, ammotype);
 }
 
-stock void SetReserveAmmo(int client, int weapon, int weaponEntity, int ammo, int primaryReserve)
+stock void SetReserveAmmo(int client, int weaponEntity, int ammo, int primaryReserve)
 {
-  int ammotype = GetEntProp(weapon, Prop_Send, "m_iPrimaryAmmoType");
+  int ammotype = GetEntProp(weaponEntity, Prop_Send, "m_iPrimaryAmmoType");
   if (ammotype == -1) return;
   
   SetEntProp(weaponEntity, Prop_Send, "m_iPrimaryReserveAmmoCount", primaryReserve); 
@@ -2024,21 +2028,22 @@ void GivePlayerRWItem(int client, int weaponEntity, char[] weaponClassname, int 
   }
   
   //Remove current weapon
-  RemovePlayerItem(client, weaponEntity);
-  AcceptEntityInput(weaponEntity, "Kill");
+  SafeRemoveWeapon(client, weaponEntity);
   
   //Give player new weapon
   int newWeaponEntity = GivePlayerItem(client, weaponClassname);
+  if (newWeaponEntity == -1)
+    return;
   
-  if(!knife) {
+  if (!knife) {
     //Set ammo to correct ammount
-    SetReserveAmmo(client, weaponEntity, newWeaponEntity, ammo, primaryReserve);
+    SetReserveAmmo(client, newWeaponEntity, ammo, primaryReserve);
     SetEntProp(newWeaponEntity, Prop_Send, "m_iClip1", clip);
   }
   
   //When m_iItemIDHigh SET to a non-zero value, fallback values will be used.
   SetEntProp(newWeaponEntity, Prop_Send, "m_iItemIDHigh", -1);
-
+  
   //Set skin
   SetEntProp(newWeaponEntity, Prop_Send, "m_nFallbackPaintKit", g_paints[inputPaint][paintNum]);
   
@@ -2070,7 +2075,7 @@ void GivePlayerRWItem(int client, int weaponEntity, char[] weaponClassname, int 
     if (inputNametagFontSize == DEFAULT_NAMETAGFONTSIZE)
       Format(nametagFontSizeString, sizeof(nametagFontSizeString), "");
     
-    Format(nametagString, sizeof(nametagString), "<font color='%s' size='%s'>%s</font>",inputNametagColourCode, nametagFontSizeString, inputNametagText);
+    Format(nametagString, sizeof(nametagString), "<font color='%s' size='%s'>%s</font>", inputNametagColourCode, nametagFontSizeString, inputNametagText);
     
     //Set nametag
     int iNameOffset = FindSendPropInfo("CEconEntity", "m_szCustomName");
@@ -2084,6 +2089,15 @@ void GivePlayerRWItem(int client, int weaponEntity, char[] weaponClassname, int 
   SetEntPropEnt(newWeaponEntity, Prop_Data, "m_hOwner", client);
   SetEntPropEnt(newWeaponEntity, Prop_Data, "m_hOwnerEntity", client);
   SetEntProp(newWeaponEntity, Prop_Send, "m_bInitialized", 1);
+  
+  if (knife) {
+    //SERVER CRASH FIX
+    //For some reason we have to drop the knife before equiping
+    //Or else a crash is caused if weapons are left on the ground
+    //And we reach the end of 'round_end' time
+    CS_DropWeapon(client, newWeaponEntity, false, true);
+    EquipPlayerWeapon(client, newWeaponEntity);
+  }
 }
 
 //Is classname a knife
@@ -2108,7 +2122,7 @@ int GetActiveWeaponListIndex(int client)
   
   if (response == -1)
     return -1;
-    
+  
   //Find index
   return GetWeaponListIndex(Classname);
 }
@@ -2130,14 +2144,11 @@ int GetProperClassname(int client, int weapon, char Classname[64])
   if (!GetEdictClassname(weapon, Classname, sizeof(Classname)))
     return -1;
   
-  //Ignore tasers
-  if(StrEqual(Classname, "weapon_taser"))
-    return -1;
-  
   int weaponItemDefinitionIndex = GetEntProp(weapon, Prop_Send, "m_iItemDefinitionIndex");
   
   //Ignore these weapon indexes
-  if(weaponItemDefinitionIndex == 42 || weaponItemDefinitionIndex == 59)
+  //31 = Taser - 42 = CT knife default - 59 = T knife default 
+  if(weaponItemDefinitionIndex == 31 || weaponItemDefinitionIndex == 42 || weaponItemDefinitionIndex == 59)
     return -1;
   
   if (GetPlayerWeaponSlot(client, CS_SLOT_PRIMARY) == weapon || GetPlayerWeaponSlot(client, CS_SLOT_SECONDARY) == weapon || GetPlayerWeaponSlot(client, CS_SLOT_KNIFE) == weapon || (GetConVarBool(cvar_c4) && GetPlayerWeaponSlot(client, CS_SLOT_C4) == weapon))
@@ -2369,6 +2380,43 @@ void PrintSkinSelectionMessage(int client, int wlIndex)
     CPrintToChat(client, "%s%t", CHAT_TAG_PREFIX, "Skin Selected Default", weaponListNiceNames[wlIndex]);
   else
     CPrintToChat(client, "%s%t", CHAT_TAG_PREFIX, "Skin Selected Normal", g_paints[g_rwPreferences[client][wlIndex][paint]][paintName], weaponListNiceNames[wlIndex]);
+}
+
+//Stock by SM9()
+//https://forums.alliedmods.net/showthread.php?t=288614
+stock bool SafeRemoveWeapon(int iClient, int iWeapon)
+{
+  if (!IsValidEntity(iWeapon) || !IsValidEdict(iWeapon)) {
+    return false;
+  }
+
+  if (!HasEntProp(iWeapon, Prop_Send, "m_hOwnerEntity")) {
+    return false;
+  }
+
+  int iOwnerEntity = GetEntPropEnt(iWeapon, Prop_Send, "m_hOwnerEntity");
+
+  if (iOwnerEntity != iClient) {
+    SetEntPropEnt(iWeapon, Prop_Send, "m_hOwnerEntity", iClient, true);
+  }
+
+  CS_DropWeapon(iClient, iWeapon, false);
+
+  if (HasEntProp(iWeapon, Prop_Send, "m_hWeaponWorldModel")) {
+    int iWorldModel = GetEntPropEnt(iWeapon, Prop_Send, "m_hWeaponWorldModel");
+    
+    if (IsValidEdict(iWorldModel) && IsValidEntity(iWorldModel)) {
+      if (!AcceptEntityInput(iWorldModel, "Kill")) {
+        return false;
+      }
+    }
+  }
+
+  if (!AcceptEntityInput(iWeapon, "Kill")) {
+    return false;
+  }
+
+  return true;
 }
 
 //Natives
