@@ -11,7 +11,7 @@
 #pragma newdecls required
 
 // Plugin Informaiton  
-#define VERSION "3.01"
+#define VERSION "3.02"
 #define SERVER_LOCK_IP "45.121.211.57"
 
 //Convars
@@ -287,31 +287,36 @@ public Action WeaponPickUpSkin(Handle timer, DataPack pack)
     return Plugin_Handled;
   
   //Get the proper classname
-  char Classname[64];
-  int weaponItemDefinitionIndex = GetProperClassname(client, weapon, Classname);
+  char weaponClassname[64];
+  int weaponItemDefinitionIndex = GetProperClassname(client, weapon, weaponClassname);
   
   //Check to see if classname is allowed
   if (weaponItemDefinitionIndex == -1)
     return Plugin_Handled;
   
   //Get wlindex of gun
-  int wlIndex = GetWeaponListIndex(Classname);
+  int wlIndex = GetWeaponListIndex(weaponClassname);
   if (wlIndex == -1)
     return Plugin_Handled;
   
-  GivePlayerRWItem(client, weapon, Classname, g_rwPreferences[client][wlIndex][paint], g_rwPreferences[client][wlIndex][wear], g_rwPreferences[client][wlIndex][seed], g_rwPreferences[client][wlIndex][stattrak], g_rwPreferences[client][wlIndex][entityQuality], g_rwPreferences[client][wlIndex][nametagText], g_rwPreferences[client][wlIndex][nametagColourCode], g_rwPreferences[client][wlIndex][nametagFontSize]);
+  GivePlayerRWItem(client, weapon, weaponClassname, g_rwPreferences[client][wlIndex][paint], g_rwPreferences[client][wlIndex][wear], g_rwPreferences[client][wlIndex][seed], g_rwPreferences[client][wlIndex][stattrak], g_rwPreferences[client][wlIndex][entityQuality], g_rwPreferences[client][wlIndex][nametagText], g_rwPreferences[client][wlIndex][nametagColourCode], g_rwPreferences[client][wlIndex][nametagFontSize]);
   
   //Switch to weapon that we just have to player
-  //We do this with a slight delay to avoid invisible arms/floating gun bug
-  DataPack pack2 = new DataPack();
-  CreateDataTimer(0.05, DelayedSwitch, pack2);
-  pack2.WriteCell(EntIndexToEntRef(client));
-  pack2.WriteString(Classname);
+  //We ignore knives here to remain compatible with !rk plugin
+  //And not switch to knives when we have other slot weapons
+  if (!IsKnife(weaponClassname)) {
+    DataPack pack2 = new DataPack();
+    pack2.WriteCell(EntIndexToEntRef(client));
+    pack2.WriteString(weaponClassname);
+    //Delay by 2 game frames to allow other plugins to do post processing
+    //1 frame after a SDKHook_WeaponEquipPost
+    RequestFrame2(DelayedSwitch, 2, pack2);
+  }
   
   return Plugin_Handled;
 }
 
-public Action DelayedSwitch(Handle timer, DataPack pack)
+public void DelayedSwitch(DataPack pack)
 {
   int client;
   char classname[64];
@@ -322,8 +327,6 @@ public Action DelayedSwitch(Handle timer, DataPack pack)
 
   //Switch to weapon that we just have to player
   SwitchToWeaponClassname(client, classname);
-  
-  return Plugin_Handled;
 }
 
 //Monitor chat to capture commands
@@ -1991,18 +1994,18 @@ void ReloadWeapon(int client)
   if (weapon < 1 || !IsValidEdict(weapon) || !IsValidEntity(weapon))
     return;
   
-  char Classname[64];
-  int weaponItemDefinitionIndex = GetProperClassname(client, weapon, Classname);
+  char weaponClassname[64];
+  int weaponItemDefinitionIndex = GetProperClassname(client, weapon, weaponClassname);
   
   if (weaponItemDefinitionIndex == -1)
     return;
   
   //Find index
-  int wlIndex = GetWeaponListIndex(Classname);
+  int wlIndex = GetWeaponListIndex(weaponClassname);
   if (wlIndex == -1)
     return;
   
-  GivePlayerRWItem(client, weapon, Classname, g_rwPreferences[client][wlIndex][paint], g_rwPreferences[client][wlIndex][wear], g_rwPreferences[client][wlIndex][seed], g_rwPreferences[client][wlIndex][stattrak], g_rwPreferences[client][wlIndex][entityQuality], g_rwPreferences[client][wlIndex][nametagText], g_rwPreferences[client][wlIndex][nametagColourCode], g_rwPreferences[client][wlIndex][nametagFontSize]);
+  GivePlayerRWItem(client, weapon, weaponClassname, g_rwPreferences[client][wlIndex][paint], g_rwPreferences[client][wlIndex][wear], g_rwPreferences[client][wlIndex][seed], g_rwPreferences[client][wlIndex][stattrak], g_rwPreferences[client][wlIndex][entityQuality], g_rwPreferences[client][wlIndex][nametagText], g_rwPreferences[client][wlIndex][nametagColourCode], g_rwPreferences[client][wlIndex][nametagFontSize]);
   
   //Switch to weapon that we just gave to player
   SwitchToWeapon(client, wlIndex);
@@ -2144,14 +2147,14 @@ int GetActiveWeaponListIndex(int client)
   if (weapon < 1 || !IsValidEdict(weapon) || !IsValidEntity(weapon))
     return -1;
   
-  char Classname[64];
-  int response = GetProperClassname(client, weapon, Classname);
+  char weaponClassname[64];
+  int response = GetProperClassname(client, weapon, weaponClassname);
   
   if (response == -1)
     return -1;
   
   //Find index
-  return GetWeaponListIndex(Classname);
+  return GetWeaponListIndex(weaponClassname);
 }
 
 int GetWeaponListIndex(const char[] classname)
@@ -2165,10 +2168,10 @@ int GetWeaponListIndex(const char[] classname)
 
 //Functions returns the proper completed classname for a given classname
 //Disallowed weapons or weapon slots will return -1
-//Otherwise, the weaponItemDefinitionIndex is returned on success and the Classname is altered
-int GetProperClassname(int client, int weapon, char Classname[64])
+//Otherwise, the weaponItemDefinitionIndex is returned on success and the classname is altered
+int GetProperClassname(int client, int weapon, char classname[64])
 {
-  if (!GetEdictClassname(weapon, Classname, sizeof(Classname)))
+  if (!GetEdictClassname(weapon, classname, sizeof(classname)))
     return -1;
   
   int weaponItemDefinitionIndex = GetEntProp(weapon, Prop_Send, "m_iItemDefinitionIndex");
@@ -2181,20 +2184,20 @@ int GetProperClassname(int client, int weapon, char Classname[64])
   if (GetPlayerWeaponSlot(client, CS_SLOT_PRIMARY) == weapon || GetPlayerWeaponSlot(client, CS_SLOT_SECONDARY) == weapon || GetPlayerWeaponSlot(client, CS_SLOT_KNIFE) == weapon || (GetConVarBool(cvar_c4) && GetPlayerWeaponSlot(client, CS_SLOT_C4) == weapon))
   {
     switch (weaponItemDefinitionIndex) {
-      case 60: strcopy(Classname, sizeof(Classname), "weapon_m4a1_silencer");
-      case 61: strcopy(Classname, sizeof(Classname), "weapon_usp_silencer");
-      case 63: strcopy(Classname, sizeof(Classname), "weapon_cz75a");
-      case 64: strcopy(Classname, sizeof(Classname), "weapon_revolver");
-      case 500: strcopy(Classname, sizeof(Classname), "weapon_bayonet");
-      case 506: strcopy(Classname, sizeof(Classname), "weapon_knife_gut");
-      case 505: strcopy(Classname, sizeof(Classname), "weapon_knife_flip");
-      case 508: strcopy(Classname, sizeof(Classname), "weapon_knife_m9_bayonet");
-      case 507: strcopy(Classname, sizeof(Classname), "weapon_knife_karambit");
-      case 509: strcopy(Classname, sizeof(Classname), "weapon_knife_tactical");
-      case 512: strcopy(Classname, sizeof(Classname), "weapon_knife_falchion");
-      case 514: strcopy(Classname, sizeof(Classname), "weapon_knife_survival_bowie");
-      case 515: strcopy(Classname, sizeof(Classname), "weapon_knife_butterfly");
-      case 516: strcopy(Classname, sizeof(Classname), "weapon_knife_push");
+      case 60: strcopy(classname, sizeof(classname), "weapon_m4a1_silencer");
+      case 61: strcopy(classname, sizeof(classname), "weapon_usp_silencer");
+      case 63: strcopy(classname, sizeof(classname), "weapon_cz75a");
+      case 64: strcopy(classname, sizeof(classname), "weapon_revolver");
+      case 500: strcopy(classname, sizeof(classname), "weapon_bayonet");
+      case 506: strcopy(classname, sizeof(classname), "weapon_knife_gut");
+      case 505: strcopy(classname, sizeof(classname), "weapon_knife_flip");
+      case 508: strcopy(classname, sizeof(classname), "weapon_knife_m9_bayonet");
+      case 507: strcopy(classname, sizeof(classname), "weapon_knife_karambit");
+      case 509: strcopy(classname, sizeof(classname), "weapon_knife_tactical");
+      case 512: strcopy(classname, sizeof(classname), "weapon_knife_falchion");
+      case 514: strcopy(classname, sizeof(classname), "weapon_knife_survival_bowie");
+      case 515: strcopy(classname, sizeof(classname), "weapon_knife_butterfly");
+      case 516: strcopy(classname, sizeof(classname), "weapon_knife_push");
     }
     
     return weaponItemDefinitionIndex;
@@ -2445,6 +2448,43 @@ stock bool SafeRemoveWeapon(int iClient, int iWeapon)
 
   return true;
 }
+
+//Credits: KissLick (https://forums.alliedmods.net/member.php?u=210752)
+stock void RequestFrame2(RequestFrameCallback func, int framesAhead = 1, any data = 0) 
+{ 
+  if (framesAhead < 1)
+    return; 
+
+  if (framesAhead == 1) {
+    RequestFrame(func, data); 
+  } else { 
+    Handle pack = CreateDataPack(); 
+#if SOURCEMOD_V_MAJOR >= 1 && SOURCEMOD_V_MINOR >= 7 
+    WritePackFunction(pack, func); 
+#else 
+    WritePackCell(pack, func); 
+#endif 
+    WritePackCell(pack, framesAhead); 
+    WritePackCell(pack, data); 
+
+    RequestFrame(RequestFrame2_CallBack, pack); 
+  }
+} 
+
+//Credits: KissLick (https://forums.alliedmods.net/member.php?u=210752)
+public void RequestFrame2_CallBack(any pack)
+{ 
+  ResetPack(pack); 
+#if SOURCEMOD_V_MAJOR >= 1 && SOURCEMOD_V_MINOR >= 7 
+  RequestFrameCallback func = view_as<RequestFrameCallback>(ReadPackFunction(pack));
+#else 
+  RequestFrameCallback func = ReadPackCell(pack); 
+#endif 
+  int framesAhead = ReadPackCell(pack) - 1; 
+  int data = ReadPackCell(pack); 
+  CloseHandle(pack); 
+  RequestFrame2(func, framesAhead, data); 
+}  
 
 //Natives
 public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max)
