@@ -324,6 +324,9 @@ public void DelayedSwitch(DataPack pack)
   
   client = EntRefToEntIndex(pack.ReadCell());
   pack.ReadString(classname, sizeof(classname));
+  
+  //Dispose of datapack
+  CloseHandle(pack);
 
   //Switch to weapon that we just have to player
   SwitchToWeaponClassname(client, classname);
