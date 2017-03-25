@@ -11,7 +11,7 @@
 #pragma newdecls required
 
 // Plugin Informaiton  
-#define VERSION "3.02"
+#define VERSION "3.03"
 #define SERVER_LOCK_IP "45.121.211.57"
 
 //Convars
@@ -178,6 +178,9 @@ public void OnPluginStart()
   
   //Create Menus
   SetupMenus();
+  
+  //Create config file
+  AutoExecConfig(true, "rw");
 }
 
 //Process clients when plugin ends (call cleanup for each client)
