@@ -11,7 +11,7 @@
 #pragma newdecls required
 
 // Plugin Informaiton  
-#define VERSION "3.03"
+#define VERSION "3.04"
 #define SERVER_LOCK_IP "45.121.211.57"
 
 //Convars
@@ -857,7 +857,7 @@ void SetupMenus()
     delete slotSelectMenu;
   
   //Main menu
-  for (int client = 1; client < MaxClients; ++client) {
+  for (int client = 1; client <= MaxClients; ++client) {
     //Delete old main menus
     if (mainMenu[client] != null)
       delete mainMenu[client];
