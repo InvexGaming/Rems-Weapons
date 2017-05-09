@@ -11,7 +11,7 @@
 #pragma newdecls required
 
 // Plugin Informaiton  
-#define VERSION "3.04"
+#define VERSION "3.05"
 #define SERVER_LOCK_IP "45.121.211.57"
 
 //Convars
@@ -202,6 +202,8 @@ public void OnClientPutInServer(int client)
   if (GetConVarBool(cvar_antiflood_enable))
     g_canUse[client] = true; //anti-flood
     
+  g_iWaitingForSayInput[client] = INPUT_NONE;
+  g_presetAction[client] = PRESET_ACTION_NONE;
   g_selectedWeaponIndex[client] = -1;
 }
 
@@ -267,6 +269,9 @@ public Action WeaponPickUpSkin(Handle timer, DataPack pack)
   client = EntRefToEntIndex(pack.ReadCell());
   weapon = EntRefToEntIndex(pack.ReadCell());
  
+  if (client == INVALID_ENT_REFERENCE || weapon == INVALID_ENT_REFERENCE)
+    return Plugin_Handled;
+  
   //Check client
   if (!IsClientInGame(client) || !IsPlayerAlive(client))
     return Plugin_Handled;
