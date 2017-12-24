@@ -11,7 +11,7 @@
 #pragma newdecls required
 
 // Plugin Informaiton  
-#define VERSION "3.05"
+#define VERSION "3.06"
 #define SERVER_LOCK_IP "45.121.211.57"
 
 //Convars
@@ -254,7 +254,7 @@ public Action Event_PlayerDeath(Event event, const char[] name, bool dontBroadca
 //Skin weapons that we pick up
 public Action OnPostWeaponEquip(int client, int weapon)
 {
-  DataPack pack = new DataPack();
+  DataPack pack;
   CreateDataTimer(0.0, WeaponPickUpSkin, pack);
   pack.WriteCell(EntIndexToEntRef(client));
   pack.WriteCell(EntIndexToEntRef(weapon));
