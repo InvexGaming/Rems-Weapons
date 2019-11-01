@@ -12,7 +12,6 @@
 
 // Plugin Informaiton  
 #define VERSION "3.06"
-#define SERVER_LOCK_IP "45.121.211.57"
 
 //Convars
 ConVar cvar_c4 = null;
@@ -136,17 +135,7 @@ Menu slotSelectMenu = null;
 
 // Plugin Start
 public void OnPluginStart()
-{
-  //Anti-share
-  if (strcmp(SERVER_LOCK_IP, "") != 0) {
-    char m_szIP[64];
-    int m_unIP = GetConVarInt(FindConVar("hostip"));
-    Format(m_szIP, sizeof(m_szIP), "%d.%d.%d.%d", (m_unIP >> 24) & 0x000000FF, (m_unIP >> 16) & 0x000000FF, (m_unIP >> 8) & 0x000000FF, m_unIP & 0x000000FF);
-
-    if (strcmp(SERVER_LOCK_IP, m_szIP) != 0)
-      SetFailState("Nope.");
-  }
-  
+{  
   //Translations
   LoadTranslations("rw.phrases");
   
