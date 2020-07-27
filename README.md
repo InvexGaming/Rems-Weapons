@@ -16,6 +16,9 @@
 ## Description
 Best CSGO weapon skin plugin ever made.
 
+## Showcase
+[![Rem's Weapons Showcase](http://img.youtube.com/vi/Y26uxZJscQ4/0.jpg)](http://www.youtube.com/watch?v=Y26uxZJscQ4 "Rem's Weapons Showcase")
+
 ## Contributions
 Contributions are always welcome!
 Just make a [pull request](../../pulls).
